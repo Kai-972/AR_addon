@@ -21,16 +21,16 @@ class BasicCameraRenderer : ArRenderer {
     private var session: Session? = null
     private var frameUpdateCallback: ((Frame) -> Unit)? = null
     
-    fun setSession(session: Session?) {
+    override fun setSession(session: Session?) {
         this.session = session
         Log.d(TAG, "Session set: ${session != null}")
     }
     
-    fun setFrameUpdateCallback(callback: (Frame) -> Unit) {
+    override fun setFrameUpdateCallback(callback: (Frame) -> Unit) {
         frameUpdateCallback = callback
     }
     
-    fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
+    override fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
         Log.d(TAG, "Display geometry set: ${width}x${height}, rotation: $rotation")
         session?.setDisplayGeometry(rotation, width, height)
     }

@@ -12,7 +12,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.landmarkverify.ar.ArCameraRenderer
+import com.example.landmarkverify.ar.ArRenderer
 import com.example.landmarkverify.ar.ArSessionManager
+import com.example.landmarkverify.ar.BasicCameraRenderer
 import com.example.landmarkverify.ar.AugmentedImageLoader
 import com.example.landmarkverify.ar.GeospatialManager
 import com.example.landmarkverify.ar.ImageCaptureManager
@@ -73,7 +75,6 @@ class VerifyArActivity : AppCompatActivity() {
         
         // CHECKPOINT 5: Try advanced renderer first, fallback to basic if it fails
         setupArRenderer()
-        }
         
         // CHECKPOINT 4: Manual capture button
         findViewById<android.widget.Button>(R.id.btn_capture_image).setOnClickListener {

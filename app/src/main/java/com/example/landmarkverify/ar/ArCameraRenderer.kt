@@ -69,7 +69,7 @@ class ArCameraRenderer : ArRenderer {
          1.0f,  1.0f, 0.0f, 0.0f  // Top-right -> Top-left
     )
     
-    fun setSession(session: Session?) {
+    override fun setSession(session: Session?) {
         this.session = session
         Log.d(TAG, "Session set: ${session != null}, camera texture ID: $cameraTextureId")
         
@@ -84,7 +84,7 @@ class ArCameraRenderer : ArRenderer {
         }
     }
     
-    fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
+    override fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
         displayRotation = rotation
         surfaceWidth = width
         surfaceHeight = height
@@ -136,7 +136,7 @@ class ArCameraRenderer : ArRenderer {
     // Frame update callback for geospatial tracking
     private var frameUpdateCallback: ((Frame) -> Unit)? = null
     
-    fun setFrameUpdateCallback(callback: (Frame) -> Unit) {
+    override fun setFrameUpdateCallback(callback: (Frame) -> Unit) {
         frameUpdateCallback = callback
     }
     
