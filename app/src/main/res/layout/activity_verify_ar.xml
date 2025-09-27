@@ -3,8 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
+
+    <!-- Basic Camera Preview for ARCore - TextureView is lighter than GLSurfaceView -->
+    <TextureView
+        android:id="@+id/camera_texture_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
     
-    <!-- Core ARCore Geospatial Info Panel - No OpenGL needed -->
+    <!-- Core ARCore Geospatial Info Panel overlay -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

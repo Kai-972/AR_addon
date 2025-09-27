@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
+import android.view.TextureView
+import android.graphics.SurfaceTexture
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -40,8 +42,10 @@ class VerifyArActivity : AppCompatActivity() {
     
     // UI elements
     private lateinit var statusText: TextView
+    private lateinit var sessionStateText: TextView
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
+    private lateinit var cameraTextureView: TextureView
     
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
@@ -71,6 +75,11 @@ class VerifyArActivity : AppCompatActivity() {
                 finish()
                 return
             }
+            sessionStateText = findViewById(R.id.session_state_text) ?: run {
+                Log.e(TAG, "❌ Failed to find session_state_text in layout")
+                finish()
+                return
+            }
             locationText = findViewById(R.id.location_text) ?: run {
                 Log.e(TAG, "❌ Failed to find location_text in layout")
                 finish()
@@ -81,9 +90,36 @@ class VerifyArActivity : AppCompatActivity() {
                 finish()
                 return
             }
+            cameraTextureView = findViewById(R.id.camera_texture_view) ?: run {
+                Log.e(TAG, "❌ Failed to find camera_texture_view in layout")
+                finish()
+                return
+            }
             
             statusText.text = "🔄 Initializing ARCore Geospatial..."
             Log.d(TAG, "✅ UI elements initialized successfully")
+            
+            // Set up camera texture listener
+            cameraTextureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    Log.d(TAG, "📹 Camera surface texture available ($width x $height)")
+                    // Surface is ready, now we can initialize ARCore if not already done
+                }
+                
+                override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    Log.d(TAG, "📹 Camera surface texture size changed ($width x $height)")
+                    setupCameraTexture()
+                }
+                
+                override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                    Log.d(TAG, "📹 Camera surface texture destroyed")
+                    return true
+                }
+                
+                override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
+                    // Called for each camera frame - too verbose to log
+                }
+            }
             
             checkPermissionsAndInitialize()
             
@@ -97,6 +133,7 @@ class VerifyArActivity : AppCompatActivity() {
         super.onResume()
         arSession?.resume()
         if (arSession != null) {
+            setupCameraTexture() // Ensure camera texture is set up
             startLocationTracking()
         }
     }
@@ -179,6 +216,7 @@ class VerifyArActivity : AppCompatActivity() {
             Log.d(TAG, "Creating ARCore session")
             runOnUiThread {
                 statusText.text = "Creating ARCore session..."
+                sessionStateText.text = "Initializing..."
             }
             
             arSession = Session(this).apply {
@@ -189,10 +227,14 @@ class VerifyArActivity : AppCompatActivity() {
                         geospatialMode = Config.GeospatialMode.ENABLED
                         isGeospatialSupported = true
                         Log.i(TAG, "✅ Geospatial mode ENABLED successfully")
+                        runOnUiThread {
+                            sessionStateText.text = "✅ Geospatial Mode Enabled"
+                        }
                     } else {
                         Log.e(TAG, "❌ Geospatial mode NOT SUPPORTED on this device")
                         runOnUiThread {
                             statusText.text = "❌ Geospatial mode not supported on this device"
+                            sessionStateText.text = "❌ Geospatial Not Supported"
                         }
                         return
                     }
@@ -206,11 +248,17 @@ class VerifyArActivity : AppCompatActivity() {
                 configure(config)
                 resume()
                 Log.d(TAG, "ARCore session configured and resumed")
+                runOnUiThread {
+                    sessionStateText.text = "✅ Session Running"
+                }
             }
             
             runOnUiThread {
                 statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
             }
+            
+            // Set up camera texture for ARCore
+            setupCameraTexture()
             
             // Start location tracking with a small delay to ensure session is fully ready
             lifecycleScope.launch {
@@ -222,7 +270,26 @@ class VerifyArActivity : AppCompatActivity() {
             Log.e(TAG, "Failed to create ARCore session", e)
             runOnUiThread {
                 statusText.text = "❌ Failed to create ARCore session: ${e.message}"
+                sessionStateText.text = "❌ Session Failed"
             }
+        }
+    }
+    
+    private fun setupCameraTexture() {
+        try {
+            val session = arSession ?: return
+            val surfaceTexture = cameraTextureView.surfaceTexture ?: return
+            
+            // Set camera texture for ARCore - this is crucial for camera access
+            session.setCameraTexture(surfaceTexture)
+            
+            // Set up display geometry so ARCore knows the camera orientation  
+            val displayRotation = windowManager.defaultDisplay.rotation
+            session.setDisplayGeometry(displayRotation, cameraTextureView.width, cameraTextureView.height)
+            
+            Log.d(TAG, "✅ Camera texture set up for ARCore (${cameraTextureView.width}x${cameraTextureView.height})")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error setting up camera texture", e)
         }
     }
     
@@ -262,7 +329,11 @@ class VerifyArActivity : AppCompatActivity() {
     }
     
     private fun updateLocationData() {
-        val session = arSession ?: return
+        val session = arSession ?: run {
+            Log.w(TAG, "❌ ARCore session is null")
+            runOnUiThread { statusText.text = "❌ ARCore session not available" }
+            return
+        }
         
         try {
             // Update ARCore frame to get latest geospatial data
@@ -270,12 +341,14 @@ class VerifyArActivity : AppCompatActivity() {
             val earth = session.earth
             
             if (earth == null) {
-                Log.w(TAG, "Earth is null - geospatial not available")
+                Log.w(TAG, "❌ Earth is null - geospatial not available yet")
                 runOnUiThread {
-                    statusText.text = "❌ Geospatial service not available"
+                    statusText.text = "🔄 Waiting for geospatial service..."
                 }
                 return
             }
+            
+            Log.v(TAG, "✅ Earth object available, checking state...")
             
             // Get current Earth state
             val earthState = earth.earthState
