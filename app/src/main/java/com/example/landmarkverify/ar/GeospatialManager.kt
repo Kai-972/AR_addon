@@ -1,0 +1,127 @@
+package com.example.landmarkverify.ar
+
+import android.util.Log
+import com.google.ar.core.Earth
+import com.google.ar.core.Frame
+import com.google.ar.core.GeospatialPose
+import com.google.ar.core.Session
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+class GeospatialManager {
+    
+    private companion object {
+        const val TAG = "GeospatialManager"
+        const val GEO_ACCURACY_METERS = 10.0
+        const val MIN_POSE_CONFIDENCE = 0.5 // Medium confidence threshold
+    }
+    
+    private val _geospatialPose = MutableStateFlow<GeospatialPose?>(null)
+    val geospatialPose: StateFlow<GeospatialPose?> = _geospatialPose.asStateFlow()
+    
+    private val _earthState = MutableStateFlow<Earth.EarthState>(Earth.EarthState.EARTH_STATE_DISABLED)
+    val earthState: StateFlow<Earth.EarthState> = _earthState.asStateFlow()
+    
+    private val _isGeospatialReady = MutableStateFlow(false)
+    val isGeospatialReady: StateFlow<Boolean> = _isGeospatialReady.asStateFlow()
+    
+    data class GeospatialData(
+        val latitude: Double,
+        val longitude: Double,
+        val altitude: Double,
+        val heading: Double,
+        val horizontalAccuracyMeters: Float,
+        val poseConfidence: Float,
+        val isAccurate: Boolean
+    )
+    
+    private val _geospatialData = MutableStateFlow<GeospatialData?>(null)
+    val geospatialData: StateFlow<GeospatialData?> = _geospatialData.asStateFlow()
+    
+    fun startGeospatialTracking(session: Session?) {
+        session?.let {
+            Log.d(TAG, "Starting geospatial tracking")
+            val earth = it.earth
+            if (earth != null) {
+                _earthState.value = earth.earthState
+                Log.d(TAG, "Earth state: ${earth.earthState}")
+            } else {
+                Log.w(TAG, "Earth is null - geospatial not supported")
+                _earthState.value = Earth.EarthState.EARTH_STATE_DISABLED
+            }
+        } ?: Log.w(TAG, "Cannot start geospatial tracking - session is null")
+    }
+    
+    fun updateGeospatialPose(frame: Frame) {
+        try {
+            val session = frame.session
+            val earth = session.earth
+            
+            if (earth == null) {
+                Log.v(TAG, "Earth is null")
+                return
+            }
+            
+            val currentEarthState = earth.earthState
+            _earthState.value = currentEarthState
+            
+            when (currentEarthState) {
+                Earth.EarthState.EARTH_STATE_ENABLED -> {
+                    val cameraGeospatialPose = earth.cameraGeospatialPose
+                    _geospatialPose.value = cameraGeospatialPose
+                    
+                    val data = GeospatialData(
+                        latitude = cameraGeospatialPose.latitude,
+                        longitude = cameraGeospatialPose.longitude,
+                        altitude = cameraGeospatialPose.altitude,
+                        heading = cameraGeospatialPose.heading,
+                        horizontalAccuracyMeters = cameraGeospatialPose.horizontalAccuracy,
+                        poseConfidence = cameraGeospatialPose.orientationYawAccuracy,
+                        isAccurate = cameraGeospatialPose.horizontalAccuracy <= GEO_ACCURACY_METERS &&
+                                   cameraGeospatialPose.orientationYawAccuracy >= MIN_POSE_CONFIDENCE
+                    )
+                    
+                    _geospatialData.value = data
+                    _isGeospatialReady.value = data.isAccurate
+                    
+                    Log.v(TAG, "Geospatial pose - Lat: ${data.latitude}, Lng: ${data.longitude}, " +
+                            "Accuracy: ${data.horizontalAccuracyMeters}m, Confidence: ${data.poseConfidence}")
+                }
+                Earth.EarthState.EARTH_STATE_ERROR_INTERNAL -> {
+                    Log.e(TAG, "Earth state error: Internal error")
+                    _isGeospatialReady.value = false
+                }
+                Earth.EarthState.EARTH_STATE_ERROR_NOT_AUTHORIZED -> {
+                    Log.e(TAG, "Earth state error: Not authorized")
+                    _isGeospatialReady.value = false
+                }
+                Earth.EarthState.EARTH_STATE_ERROR_RESOURCE_EXHAUSTED -> {
+                    Log.e(TAG, "Earth state error: Resource exhausted")
+                    _isGeospatialReady.value = false
+                }
+                else -> {
+                    Log.d(TAG, "Earth state: $currentEarthState")
+                    _isGeospatialReady.value = false
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating geospatial pose", e)
+            _isGeospatialReady.value = false
+        }
+    }
+    
+    fun getCurrentLocation(): GeospatialData? = _geospatialData.value
+    
+    fun isLocationAccurate(): Boolean = _geospatialData.value?.isAccurate ?: false
+    
+    fun getAccuracyStatus(): String {
+        val data = _geospatialData.value ?: return "No location data"
+        return when {
+            data.horizontalAccuracyMeters <= 5.0 -> "High accuracy (${data.horizontalAccuracyMeters}m)"
+            data.horizontalAccuracyMeters <= GEO_ACCURACY_METERS -> "Good accuracy (${data.horizontalAccuracyMeters}m)"
+            else -> "Low accuracy (${data.horizontalAccuracyMeters}m)"
+        }
+    }
+}

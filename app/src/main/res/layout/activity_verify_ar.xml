@@ -44,6 +44,45 @@
         android:textColor="#FFFF00"
         android:textSize="12sp" />
 
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="8dp"
+        android:text="Location:"
+        android:textColor="#AAAAAA"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/location_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:padding="8dp"
+        android:text="Waiting for location..."
+        android:textColor="#00FF00"
+        android:textSize="11sp"
+        android:fontFamily="monospace" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="4dp"
+        android:text="Accuracy:"
+        android:textColor="#AAAAAA"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/accuracy_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:padding="8dp"
+        android:text="No accuracy data"
+        android:textColor="#FFAA00"
+        android:textSize="11sp" />
+
     <View
         android:layout_width="match_parent"
         android:layout_height="0dp"

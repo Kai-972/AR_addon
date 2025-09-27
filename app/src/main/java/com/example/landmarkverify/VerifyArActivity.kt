@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.landmarkverify.ar.ArSessionManager
 import com.example.landmarkverify.ar.AugmentedImageLoader
+import com.example.landmarkverify.ar.GeospatialManager
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.AugmentedImage
 import com.google.ar.core.Config
@@ -29,8 +30,11 @@ class VerifyArActivity : AppCompatActivity() {
     
     private lateinit var statusText: TextView
     private lateinit var sessionStateText: TextView
+    private lateinit var locationText: TextView
+    private lateinit var accuracyText: TextView
     private lateinit var arSessionManager: ArSessionManager
     private lateinit var imageLoader: AugmentedImageLoader
+    private lateinit var geospatialManager: GeospatialManager
     private var userRequestedInstall = false
     
     private val permissionLauncher = registerForActivityResult(
@@ -53,8 +57,11 @@ class VerifyArActivity : AppCompatActivity() {
         
         statusText = findViewById(R.id.status_text)
         sessionStateText = findViewById(R.id.session_state_text)
+        locationText = findViewById(R.id.location_text)
+        accuracyText = findViewById(R.id.accuracy_text)
         arSessionManager = ArSessionManager()
         imageLoader = AugmentedImageLoader()
+        geospatialManager = GeospatialManager()
         
         // Observe session state changes
         lifecycleScope.launch {
@@ -64,10 +71,27 @@ class VerifyArActivity : AppCompatActivity() {
             }
         }
         
-        // Observe frame updates for image detection
+        // Observe geospatial data updates
+        lifecycleScope.launch {
+            geospatialManager.geospatialData.collect { data ->
+                data?.let { updateLocationUI(it) }
+            }
+        }
+        
+        // Observe Earth state changes
+        lifecycleScope.launch {
+            geospatialManager.earthState.collect { earthState ->
+                Log.d(TAG, "Earth state: $earthState")
+            }
+        }
+        
+        // Observe frame updates for image detection and geospatial pose
         lifecycleScope.launch {
             arSessionManager.frameUpdates.collect { frame ->
-                frame?.let { processFrameForImageDetection(it) }
+                frame?.let { 
+                    processFrameForImageDetection(it)
+                    geospatialManager.updateGeospatialPose(it)
+                }
             }
         }
         
@@ -119,7 +143,8 @@ class VerifyArActivity : AppCompatActivity() {
                         statusText.text = "ARCore available, initializing session..."
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         setupAugmentedImages()
-                        statusText.text = "AR Session initialized with image database"
+                        setupGeospatialTracking()
+                        statusText.text = "AR Session initialized with geospatial tracking"
                     }
                     ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
                     ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
@@ -153,7 +178,8 @@ class VerifyArActivity : AppCompatActivity() {
                     lifecycleScope.launch {
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         setupAugmentedImages()
-                        statusText.text = "AR Session initialized with image database"
+                        setupGeospatialTracking()
+                        statusText.text = "AR Session initialized with geospatial tracking"
                     }
                 }
             }
@@ -257,6 +283,41 @@ class VerifyArActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e(TAG, "Error processing frame for image detection", e)
+        }
+    }
+    
+    private fun setupGeospatialTracking() {
+        try {
+            Log.d(TAG, "Setting up geospatial tracking")
+            val session = arSessionManager.getSession()
+            geospatialManager.startGeospatialTracking(session)
+            
+            // Start periodic frame updates for geospatial pose
+            lifecycleScope.launch {
+                while (arSessionManager.isSessionInitialized()) {
+                    val frame = arSessionManager.updateFrame()
+                    frame?.let { geospatialManager.updateGeospatialPose(it) }
+                    kotlinx.coroutines.delay(100) // Update every 100ms
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up geospatial tracking", e)
+            statusText.text = "Error setting up geospatial tracking: ${e.message}"
+        }
+    }
+    
+    private fun updateLocationUI(data: GeospatialManager.GeospatialData) {
+        runOnUiThread {
+            locationText.text = "Lat: ${"%.6f".format(data.latitude)}\nLng: ${"%.6f".format(data.longitude)}\nAlt: ${"%.1f".format(data.altitude)}m"
+            accuracyText.text = geospatialManager.getAccuracyStatus()
+            
+            // Update status based on accuracy
+            if (data.isAccurate) {
+                statusText.text = "✓ Location accurate - Ready for verification"
+            } else {
+                statusText.text = "Improving location accuracy... (${data.horizontalAccuracyMeters}m)"
+            }
         }
     }
 }
