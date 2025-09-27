@@ -53,7 +53,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.0")
     implementation("androidx.camera:camera-view:1.3.0")
     
-    // Location Services (Android native - no ARCore)
+    // Location Services (Android native - no ARCore needed)
     implementation("com.google.android.gms:play-services-location:21.0.1")
     
     // Networking
