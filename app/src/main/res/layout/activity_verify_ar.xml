@@ -111,7 +111,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Instructions: Point camera at landmark to verify"
+            android:text="💡 For GPS: Go outside with clear sky view. GPS may take 1-2 minutes to acquire location."
             android:textColor="#CCCCCC"
             android:textSize="11sp"
             android:layout_marginBottom="8dp" />

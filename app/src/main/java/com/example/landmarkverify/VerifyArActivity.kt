@@ -320,10 +320,27 @@ class VerifyArActivity : AppCompatActivity() {
     private fun updateLocationPeriodically() {
         lifecycleScope.launch {
             try {
-                // Update location every 2 seconds, with safety checks
-                while (arSession != null && isGeospatialSupported && !isFinishing) {
+                var attemptCount = 0
+                // Update location with dynamic delay based on GPS status
+                while (arSession != null && isGeospatialSupported && !isFinishing && attemptCount < 60) { // Max 2 minutes
                     updateLocationData()
-                    delay(2000) // Update every 2 seconds instead of 1
+                    attemptCount++
+                    
+                    // Dynamic delay - faster updates initially, slower later
+                    val delayMs = when {
+                        attemptCount < 10 -> 1000 // First 10 seconds: check every 1s
+                        attemptCount < 30 -> 2000 // Next 40 seconds: check every 2s
+                        else -> 3000 // After 50 seconds: check every 3s
+                    }
+                    
+                    delay(delayMs)
+                }
+                
+                if (attemptCount >= 60) {
+                    Log.w(TAG, "⏰ GPS timeout after 2 minutes")
+                    runOnUiThread {
+                        statusText.text = "⏰ GPS timeout - try moving to an open area with clear sky view"
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in location tracking", e)
@@ -395,7 +412,12 @@ class VerifyArActivity : AppCompatActivity() {
                     val horizontalAccuracy = geospatialPose.horizontalAccuracy
                     val heading = geospatialPose.heading
                     
-                    val isAccurate = horizontalAccuracy <= 10.0f // Within 10 meters
+                    // Check if coordinates are valid (not zero/null location)
+                    val hasValidCoordinates = latitude != 0.0 && longitude != 0.0
+                    val hasReasonableAccuracy = horizontalAccuracy > 0.0f && horizontalAccuracy < 1000.0f
+                    val isAccurate = horizontalAccuracy <= 10.0f && hasValidCoordinates && hasReasonableAccuracy
+                    
+                    Log.d(TAG, "📍 Location validation - Coords valid: $hasValidCoordinates, Accuracy reasonable: $hasReasonableAccuracy, Accurate: $isAccurate")
                     
                     runOnUiThread {
                         locationText.text = "📍 Lat: ${"%.6f".format(latitude)}\n" +
@@ -404,19 +426,29 @@ class VerifyArActivity : AppCompatActivity() {
                                           "🧭 Heading: ${"%.1f".format(heading)}°"
                         
                         accuracyText.text = when {
+                            !hasValidCoordinates -> "❌ Invalid coordinates (0,0)"
+                            !hasReasonableAccuracy -> "❌ Invalid accuracy (${horizontalAccuracy}m)"
                             horizontalAccuracy <= 5.0f -> "🎯 High accuracy (${horizontalAccuracy}m)"
                             horizontalAccuracy <= 10.0f -> "✅ Good accuracy (${horizontalAccuracy}m)"
-                            else -> "⚠️ Low accuracy (${horizontalAccuracy}m)"
+                            horizontalAccuracy <= 50.0f -> "⚠️ Fair accuracy (${horizontalAccuracy}m)"
+                            else -> "🔴 Poor accuracy (${horizontalAccuracy}m)"
                         }
                         
-                        statusText.text = if (isAccurate) {
-                            "✅ LOCATION VALIDATED - Ready for verification!"
-                        } else {
-                            "🔄 Improving location accuracy... (${horizontalAccuracy}m)"
+                        statusText.text = when {
+                            !hasValidCoordinates -> "❌ Waiting for GPS coordinates... (currently 0,0)"
+                            !hasReasonableAccuracy -> "❌ Waiting for GPS accuracy data..."
+                            isAccurate -> "✅ LOCATION VALIDATED - Ready for verification!"
+                            horizontalAccuracy <= 50.0f -> "🔄 Improving location accuracy... (${horizontalAccuracy}m)"
+                            else -> "🔄 Acquiring GPS signal... (${horizontalAccuracy}m)"
                         }
                     }
                     
-                    Log.d(TAG, "📍 Location: $latitude, $longitude (±${horizontalAccuracy}m)")
+                    Log.d(TAG, "📍 Location: $latitude, $longitude (±${horizontalAccuracy}m) - Valid: $hasValidCoordinates")
+                    
+                    // If we have invalid coordinates, provide helpful tips
+                    if (!hasValidCoordinates) {
+                        Log.w(TAG, "⚠️ GPS coordinates are zero - device may need clear sky view or more time")
+                    }
                 }
                 
                 com.google.ar.core.Earth.EarthState.ERROR_INTERNAL -> {
