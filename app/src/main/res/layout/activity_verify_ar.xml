@@ -4,7 +4,14 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- Core ARCore Geospatial Info Panel - No camera preview needed for geospatial data -->
+    <!-- Minimal GLSurfaceView for ARCore context - make it tiny and invisible -->
+    <android.opengl.GLSurfaceView
+        android:id="@+id/ar_surface_view"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="invisible" />
+
+    <!-- Core ARCore Geospatial Info Panel -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -8,6 +8,9 @@ import android.widget.TextView
 import android.widget.Toast
 import android.location.LocationManager
 import android.content.Context
+import android.opengl.GLSurfaceView
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -45,6 +48,7 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var sessionStateText: TextView
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
+    private lateinit var surfaceView: GLSurfaceView
     
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
@@ -89,6 +93,14 @@ class VerifyArActivity : AppCompatActivity() {
                 finish()
                 return
             }
+            surfaceView = findViewById(R.id.ar_surface_view) ?: run {
+                Log.e(TAG, "❌ Failed to find ar_surface_view in layout")
+                finish()
+                return
+            }
+            
+            // Set up minimal GLSurfaceView for ARCore context
+            setupMinimalRenderer()
             
             statusText.text = "🔄 Initializing ARCore Geospatial..."
             Log.d(TAG, "✅ UI elements initialized successfully")
@@ -103,6 +115,7 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        surfaceView.onResume()
         arSession?.resume()
         if (arSession != null) {
             startLocationTracking()
@@ -111,6 +124,7 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onPause() {
         super.onPause()
+        surfaceView.onPause()
         arSession?.pause()
     }
     
@@ -256,6 +270,35 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
+    private fun setupMinimalRenderer() {
+        // Set up a minimal OpenGL renderer for ARCore context
+        surfaceView.setEGLContextClientVersion(2)
+        surfaceView.setRenderer(object : GLSurfaceView.Renderer {
+            override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+                Log.d(TAG, "📱 Minimal OpenGL surface created for ARCore")
+            }
+            
+            override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+                Log.d(TAG, "📱 Minimal OpenGL surface changed: ${width}x${height}")
+            }
+            
+            override fun onDrawFrame(gl: GL10?) {
+                // Minimal rendering - just clear the screen
+                try {
+                    arSession?.let { session ->
+                        val frame = session.update()
+                        // Frame is updated for ARCore, but we don't draw anything
+                    }
+                } catch (e: Exception) {
+                    Log.v(TAG, "Frame update in renderer: ${e.message}")
+                }
+            }
+        })
+        
+        surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        Log.d(TAG, "✅ Minimal GLSurfaceView renderer set up")
+    }
+    
     private fun startLocationTracking() {
         if (arSession == null || !isGeospatialSupported) {
             Log.w(TAG, "Cannot start location tracking - session not ready or geospatial not supported")
@@ -299,30 +342,30 @@ class VerifyArActivity : AppCompatActivity() {
         }
         
         try {
-            // Update ARCore frame to get latest geospatial data
-            val frame = session.update()
-            Log.v(TAG, "📱 ARCore frame updated successfully")
-            
-            // Check camera tracking state
-            val camera = frame.camera
-            val trackingState = camera.trackingState
-            Log.v(TAG, "📹 Camera tracking state: $trackingState")
-            
-            if (trackingState != com.google.ar.core.TrackingState.TRACKING) {
-                Log.w(TAG, "⚠️ Camera not tracking properly: $trackingState")
-                runOnUiThread {
-                    statusText.text = "🔄 Camera initializing... ($trackingState)"
-                    sessionStateText.text = "📹 Camera: $trackingState"
-                }
+            // Check if activity is still valid
+            if (isFinishing || isDestroyed) {
+                Log.w(TAG, "⚠️ Activity is finishing/destroyed, stopping location updates")
                 return
             }
             
-            val earth = session.earth
+            Log.v(TAG, "📱 Checking geospatial data (frame updates handled by renderer)")
+            
+            val earth = try {
+                session.earth
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to get Earth object", e)
+                runOnUiThread {
+                    statusText.text = "❌ Geospatial service error: ${e.localizedMessage}"
+                    sessionStateText.text = "❌ Earth Error"
+                }
+                return
+            }
             
             if (earth == null) {
                 Log.w(TAG, "❌ Earth is null - geospatial not available yet. Check internet connection.")
                 runOnUiThread {
                     statusText.text = "🔄 Waiting for geospatial service... (check internet)"
+                    sessionStateText.text = "⏳ Waiting for Earth"
                 }
                 return
             }
@@ -335,7 +378,16 @@ class VerifyArActivity : AppCompatActivity() {
             when (earthState) {
                 com.google.ar.core.Earth.EarthState.ENABLED -> {
                     // SUCCESS! Get geospatial pose
-                    val geospatialPose = earth.cameraGeospatialPose
+                    val geospatialPose = try {
+                        earth.cameraGeospatialPose
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Failed to get camera geospatial pose", e)
+                        runOnUiThread {
+                            statusText.text = "❌ Location pose error: ${e.localizedMessage}"
+                            sessionStateText.text = "❌ Pose Error"
+                        }
+                        return
+                    }
                     
                     val latitude = geospatialPose.latitude
                     val longitude = geospatialPose.longitude
