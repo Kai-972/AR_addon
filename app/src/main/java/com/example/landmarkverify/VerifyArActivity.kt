@@ -7,8 +7,11 @@ import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
 import android.location.LocationManager
+import android.location.LocationListener
+import android.location.Location
 import android.content.Context
 import android.opengl.GLSurfaceView
+import android.os.Looper
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +45,8 @@ class VerifyArActivity : AppCompatActivity() {
     private var arSession: Session? = null
     private var isGeospatialSupported = false
     private var userRequestedInstall = false
+    private var locationManager: LocationManager? = null
+    private var lastKnownLocation: Location? = null
     
     // UI elements
     private lateinit var statusText: TextView
@@ -130,6 +135,11 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            locationManager?.removeUpdates(locationListener)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error removing location updates", e)
+        }
         arSession?.close()
     }
     
@@ -164,6 +174,9 @@ class VerifyArActivity : AppCompatActivity() {
                 }
                 
                 Log.d(TAG, "✅ Location services enabled - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
+                
+                // Start Android GPS location updates to help bootstrap ARCore
+                startAndroidLocationUpdates()
                 
                 // Check ARCore availability
                 when (ArCoreApk.getInstance().checkAvailability(this@VerifyArActivity)) {
@@ -270,6 +283,43 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            lastKnownLocation = location
+            Log.d(TAG, "📍 Android GPS: ${location.latitude}, ${location.longitude} (±${location.accuracy}m)")
+            runOnUiThread {
+                if (arSession?.earth?.earthState != com.google.ar.core.Earth.EarthState.ENABLED) {
+                    // Show Android GPS data while waiting for ARCore Geospatial
+                    locationText.text = "📍 Lat: ${"%.6f".format(location.latitude)} (Android GPS)\n" +
+                                      "🌐 Lng: ${"%.6f".format(location.longitude)} (Android GPS)\n" +
+                                      "⛰️ Alt: ${"%.1f".format(location.altitude)}m\n" +
+                                      "🧭 Provider: ${location.provider}"
+                    
+                    accuracyText.text = when {
+                        location.accuracy <= 5.0f -> "🎯 High accuracy (${location.accuracy}m) - Android GPS"
+                        location.accuracy <= 15.0f -> "✅ Good accuracy (${location.accuracy}m) - Android GPS"
+                        else -> "⚠️ Fair accuracy (${location.accuracy}m) - Android GPS"
+                    }
+                    
+                    statusText.text = "📱 Android GPS working, initializing ARCore Geospatial..."
+                }
+            }
+        }
+        
+        override fun onProviderEnabled(provider: String) {
+            Log.d(TAG, "📡 GPS Provider enabled: $provider")
+        }
+        
+        override fun onProviderDisabled(provider: String) {
+            Log.w(TAG, "📡 GPS Provider disabled: $provider")
+        }
+        
+        @Deprecated("Deprecated in API level 29")
+        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
+            Log.d(TAG, "📡 GPS Provider status changed: $provider, status: $status")
+        }
+    }
+    
     private fun setupMinimalRenderer() {
         // Set up a minimal OpenGL renderer for ARCore context
         surfaceView.setEGLContextClientVersion(2)
@@ -297,6 +347,58 @@ class VerifyArActivity : AppCompatActivity() {
         
         surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         Log.d(TAG, "✅ Minimal GLSurfaceView renderer set up")
+    }
+    
+    private fun startAndroidLocationUpdates() {
+        try {
+            locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            
+            // Request updates from both GPS and Network providers
+            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
+                locationManager?.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    1000L, // 1 second
+                    0f,    // 0 meters
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+                Log.d(TAG, "📡 Started GPS location updates")
+            }
+            
+            if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
+                locationManager?.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    2000L, // 2 seconds
+                    0f,    // 0 meters  
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+                Log.d(TAG, "📡 Started Network location updates")
+            }
+            
+            // Get last known location immediately
+            val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val lastNetwork = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            
+            val bestLocation = when {
+                lastGps != null && lastNetwork != null -> {
+                    if (lastGps.accuracy <= lastNetwork.accuracy) lastGps else lastNetwork
+                }
+                lastGps != null -> lastGps
+                lastNetwork != null -> lastNetwork
+                else -> null
+            }
+            
+            bestLocation?.let {
+                Log.d(TAG, "📍 Using last known location: ${it.latitude}, ${it.longitude} (±${it.accuracy}m)")
+                locationListener.onLocationChanged(it)
+            }
+            
+        } catch (e: SecurityException) {
+            Log.e(TAG, "❌ Location permission denied", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error starting Android location updates", e)
+        }
     }
     
     private fun startLocationTracking() {
@@ -420,22 +522,28 @@ class VerifyArActivity : AppCompatActivity() {
                     Log.d(TAG, "📍 Location validation - Coords valid: $hasValidCoordinates, Accuracy reasonable: $hasReasonableAccuracy, Accurate: $isAccurate")
                     
                     runOnUiThread {
-                        locationText.text = "📍 Lat: ${"%.6f".format(latitude)}\n" +
-                                          "🌐 Lng: ${"%.6f".format(longitude)}\n" +
+                        locationText.text = "📍 Lat: ${"%.6f".format(latitude)} (ARCore)\n" +
+                                          "🌐 Lng: ${"%.6f".format(longitude)} (ARCore)\n" +
                                           "⛰️ Alt: ${"%.1f".format(altitude)}m\n" +
                                           "🧭 Heading: ${"%.1f".format(heading)}°"
                         
                         accuracyText.text = when {
-                            !hasValidCoordinates -> "❌ Invalid coordinates (0,0)"
-                            !hasReasonableAccuracy -> "❌ Invalid accuracy (${horizontalAccuracy}m)"
-                            horizontalAccuracy <= 5.0f -> "🎯 High accuracy (${horizontalAccuracy}m)"
-                            horizontalAccuracy <= 10.0f -> "✅ Good accuracy (${horizontalAccuracy}m)"
-                            horizontalAccuracy <= 50.0f -> "⚠️ Fair accuracy (${horizontalAccuracy}m)"
-                            else -> "🔴 Poor accuracy (${horizontalAccuracy}m)"
+                            !hasValidCoordinates -> "❌ Invalid coordinates (0,0) - ARCore"
+                            !hasReasonableAccuracy -> "❌ Invalid accuracy (${horizontalAccuracy}m) - ARCore"
+                            horizontalAccuracy <= 5.0f -> "🎯 High accuracy (${horizontalAccuracy}m) - ARCore"
+                            horizontalAccuracy <= 10.0f -> "✅ Good accuracy (${horizontalAccuracy}m) - ARCore"
+                            horizontalAccuracy <= 50.0f -> "⚠️ Fair accuracy (${horizontalAccuracy}m) - ARCore"
+                            else -> "🔴 Poor accuracy (${horizontalAccuracy}m) - ARCore"
                         }
                         
                         statusText.text = when {
-                            !hasValidCoordinates -> "❌ Waiting for GPS coordinates... (currently 0,0)"
+                            !hasValidCoordinates -> {
+                                if (lastKnownLocation != null) {
+                                    "🔄 ARCore Geospatial initializing... (Android GPS: ${lastKnownLocation!!.accuracy}m)"
+                                } else {
+                                    "❌ Waiting for GPS coordinates... (currently 0,0)"
+                                }
+                            }
                             !hasReasonableAccuracy -> "❌ Waiting for GPS accuracy data..."
                             isAccurate -> "✅ LOCATION VALIDATED - Ready for verification!"
                             horizontalAccuracy <= 50.0f -> "🔄 Improving location accuracy... (${horizontalAccuracy}m)"
