@@ -2,6 +2,7 @@ package com.example.landmarkverify
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
@@ -10,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.landmarkverify.ar.ArRenderer
 import com.example.landmarkverify.ar.ArSessionManager
 import com.example.landmarkverify.ar.AugmentedImageLoader
 import com.example.landmarkverify.ar.GeospatialManager
@@ -32,6 +34,8 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var sessionStateText: TextView
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
+    private lateinit var glSurfaceView: GLSurfaceView
+    private lateinit var arRenderer: ArRenderer
     private lateinit var arSessionManager: ArSessionManager
     private lateinit var imageLoader: AugmentedImageLoader
     private lateinit var geospatialManager: GeospatialManager
@@ -59,9 +63,19 @@ class VerifyArActivity : AppCompatActivity() {
         sessionStateText = findViewById(R.id.session_state_text)
         locationText = findViewById(R.id.location_text)
         accuracyText = findViewById(R.id.accuracy_text)
+        glSurfaceView = findViewById(R.id.gl_surface_view)
+        
+        // Initialize AR components
+        arRenderer = ArRenderer()
         arSessionManager = ArSessionManager()
         imageLoader = AugmentedImageLoader()
         geospatialManager = GeospatialManager()
+        
+        // Setup GLSurfaceView
+        glSurfaceView.preserveEGLContextOnPause = true
+        glSurfaceView.setEGLContextClientVersion(2)
+        glSurfaceView.setRenderer(arRenderer)
+        glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         
         // Observe session state changes
         lifecycleScope.launch {
@@ -89,6 +103,9 @@ class VerifyArActivity : AppCompatActivity() {
         lifecycleScope.launch {
             arSessionManager.frameUpdates.collect { frame ->
                 frame?.let { 
+                    // Update renderer with new frame
+                    arRenderer.updateFrame(it)
+                    
                     processFrameForImageDetection(it)
                     val session = arSessionManager.getSession()
                     session?.let { s -> geospatialManager.updateGeospatialPose(it, s) }
@@ -102,6 +119,7 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        glSurfaceView.onResume()
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             lifecycleScope.launch {
                 arSessionManager.resumeSession()
@@ -112,6 +130,7 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onPause() {
         super.onPause()
+        glSurfaceView.onPause()
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             arSessionManager.pauseSession()
             statusText.text = "AR Session paused"
@@ -143,6 +162,10 @@ class VerifyArActivity : AppCompatActivity() {
                         Log.d(TAG, "ARCore is installed and supported")
                         statusText.text = "ARCore available, initializing session..."
                         arSessionManager.initializeSession(this@VerifyArActivity)
+                        
+                        // Connect session to renderer
+                        arRenderer.setSession(arSessionManager.getSession())
+                        
                         setupAugmentedImages()
                         setupGeospatialTracking()
                         statusText.text = "AR Session initialized with geospatial tracking"
@@ -178,6 +201,10 @@ class VerifyArActivity : AppCompatActivity() {
                     Log.d(TAG, "ARCore installed, initializing session")
                     lifecycleScope.launch {
                         arSessionManager.initializeSession(this@VerifyArActivity)
+                        
+                        // Connect session to renderer
+                        arRenderer.setSession(arSessionManager.getSession())
+                        
                         setupAugmentedImages()
                         setupGeospatialTracking()
                         statusText.text = "AR Session initialized with geospatial tracking"
