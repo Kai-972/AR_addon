@@ -90,7 +90,8 @@ class VerifyArActivity : AppCompatActivity() {
             arSessionManager.frameUpdates.collect { frame ->
                 frame?.let { 
                     processFrameForImageDetection(it)
-                    geospatialManager.updateGeospatialPose(it)
+                    val session = arSessionManager.getSession()
+                    session?.let { s -> geospatialManager.updateGeospatialPose(it, s) }
                 }
             }
         }
@@ -296,7 +297,9 @@ class VerifyArActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 while (arSessionManager.isSessionInitialized()) {
                     val frame = arSessionManager.updateFrame()
-                    frame?.let { geospatialManager.updateGeospatialPose(it) }
+                    frame?.let { f -> 
+                        session?.let { s -> geospatialManager.updateGeospatialPose(f, s) }
+                    }
                     kotlinx.coroutines.delay(100) // Update every 100ms
                 }
             }

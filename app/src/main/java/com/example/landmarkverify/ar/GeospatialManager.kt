@@ -20,7 +20,7 @@ class GeospatialManager {
     private val _geospatialPose = MutableStateFlow<GeospatialPose?>(null)
     val geospatialPose: StateFlow<GeospatialPose?> = _geospatialPose.asStateFlow()
     
-    private val _earthState = MutableStateFlow<Earth.EarthState>(Earth.EarthState.EARTH_STATE_DISABLED)
+    private val _earthState = MutableStateFlow<Earth.EarthState>(Earth.EarthState.DISABLED)
     val earthState: StateFlow<Earth.EarthState> = _earthState.asStateFlow()
     
     private val _isGeospatialReady = MutableStateFlow(false)
@@ -48,14 +48,13 @@ class GeospatialManager {
                 Log.d(TAG, "Earth state: ${earth.earthState}")
             } else {
                 Log.w(TAG, "Earth is null - geospatial not supported")
-                _earthState.value = Earth.EarthState.EARTH_STATE_DISABLED
+                _earthState.value = Earth.EarthState.DISABLED
             }
         } ?: Log.w(TAG, "Cannot start geospatial tracking - session is null")
     }
     
-    fun updateGeospatialPose(frame: Frame) {
+    fun updateGeospatialPose(frame: Frame, session: Session) {
         try {
-            val session = frame.session
             val earth = session.earth
             
             if (earth == null) {
@@ -67,7 +66,7 @@ class GeospatialManager {
             _earthState.value = currentEarthState
             
             when (currentEarthState) {
-                Earth.EarthState.EARTH_STATE_ENABLED -> {
+                Earth.EarthState.ENABLED -> {
                     val cameraGeospatialPose = earth.cameraGeospatialPose
                     _geospatialPose.value = cameraGeospatialPose
                     
@@ -78,8 +77,8 @@ class GeospatialManager {
                         heading = cameraGeospatialPose.heading,
                         horizontalAccuracyMeters = cameraGeospatialPose.horizontalAccuracy,
                         poseConfidence = cameraGeospatialPose.orientationYawAccuracy,
-                        isAccurate = cameraGeospatialPose.horizontalAccuracy <= GEO_ACCURACY_METERS &&
-                                   cameraGeospatialPose.orientationYawAccuracy >= MIN_POSE_CONFIDENCE
+                        isAccurate = cameraGeospatialPose.horizontalAccuracy <= GEO_ACCURACY_METERS.toFloat() &&
+                                   cameraGeospatialPose.orientationYawAccuracy >= MIN_POSE_CONFIDENCE.toFloat()
                     )
                     
                     _geospatialData.value = data
@@ -88,15 +87,15 @@ class GeospatialManager {
                     Log.v(TAG, "Geospatial pose - Lat: ${data.latitude}, Lng: ${data.longitude}, " +
                             "Accuracy: ${data.horizontalAccuracyMeters}m, Confidence: ${data.poseConfidence}")
                 }
-                Earth.EarthState.EARTH_STATE_ERROR_INTERNAL -> {
+                Earth.EarthState.ERROR_INTERNAL -> {
                     Log.e(TAG, "Earth state error: Internal error")
                     _isGeospatialReady.value = false
                 }
-                Earth.EarthState.EARTH_STATE_ERROR_NOT_AUTHORIZED -> {
+                Earth.EarthState.ERROR_NOT_AUTHORIZED -> {
                     Log.e(TAG, "Earth state error: Not authorized")
                     _isGeospatialReady.value = false
                 }
-                Earth.EarthState.EARTH_STATE_ERROR_RESOURCE_EXHAUSTED -> {
+                Earth.EarthState.ERROR_RESOURCE_EXHAUSTED -> {
                     Log.e(TAG, "Earth state error: Resource exhausted")
                     _isGeospatialReady.value = false
                 }
