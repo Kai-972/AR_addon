@@ -38,9 +38,10 @@ class ArSessionManager {
             Log.d(TAG, "Initializing ARCore session")
             
             session = Session(context).apply {
+                val sessionRef = this
                 val config = Config(this).apply {
                     // Enable Geospatial if supported
-                    if (this@apply.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                    if (sessionRef.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                         geospatialMode = Config.GeospatialMode.ENABLED
                         isGeospatialSupported = true
                         Log.d(TAG, "Geospatial mode enabled")
