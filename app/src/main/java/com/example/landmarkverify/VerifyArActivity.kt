@@ -71,12 +71,24 @@ class VerifyArActivity : AppCompatActivity() {
         accuracyText = findViewById(R.id.accuracy_text)
         arSurfaceView = findViewById(R.id.ar_surface_view)
         
-        // CHECKPOINT 5: Setup AR Camera Renderer
+                // CHECKPOINT 5: Setup AR surface view and renderer
+        arSurfaceView = findViewById(R.id.ar_surface_view)
         arCameraRenderer = ArCameraRenderer()
-        arSurfaceView.preserveEGLContextOnPause = true
-        arSurfaceView.setEGLContextClientVersion(2)
         arSurfaceView.setRenderer(arCameraRenderer)
         arSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        
+        // Setup display geometry and frame updates
+        setupDisplayGeometry()
+        
+        // Connect geospatial updates to renderer frames
+        arCameraRenderer.setFrameUpdateCallback { frame ->
+            if (::geospatialManager.isInitialized && ::arSessionManager.isInitialized) {
+                val session = arSessionManager.getSession()
+                session?.let { 
+                    geospatialManager.updateGeospatialPose(frame, it)
+                }
+            }
+        }
         
         // CHECKPOINT 4: Manual capture button
         findViewById<android.widget.Button>(R.id.btn_capture_image).setOnClickListener {
@@ -120,29 +132,8 @@ class VerifyArActivity : AppCompatActivity() {
         }
         
         // CHECKPOINT 4: Frame processing with image capture and matching
-        lifecycleScope.launch {
-            while (true) {
-                if (arSessionManager.isSessionInitialized()) {
-                    val session = arSessionManager.getSession()
-                    val frame = arSessionManager.updateFrame()
-                    if (session != null && frame != null) {
-                        // Update geospatial pose
-                        geospatialManager.updateGeospatialPose(frame, session)
-                        
-                        // Process augmented images
-                        processFrameForImageDetection(frame)
-                        
-                        // CHECKPOINT 4: Capture and analyze frame
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastCaptureTime > captureIntervalMs) {
-                            processFrameForCapture(frame)
-                            lastCaptureTime = currentTime
-                        }
-                    }
-                }
-                kotlinx.coroutines.delay(100) // Faster updates for CHECKPOINT 4
-            }
-        }
+        // Frame processing now handled by ArCameraRenderer callback
+        Log.d(TAG, "CHECKPOINT 5: Frame processing integrated with camera renderer")
         
         statusText.text = "Initializing AR verification..."
         checkPermissionsAndInitialize()
@@ -151,6 +142,10 @@ class VerifyArActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         arSurfaceView.onResume()
+        
+        // Update display geometry on resume
+        setupDisplayGeometry()
+        
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             lifecycleScope.launch {
                 arSessionManager.resumeSession()
@@ -246,6 +241,21 @@ class VerifyArActivity : AppCompatActivity() {
             Log.e(TAG, "Error requesting ARCore installation", e)
             statusText.text = "Error installing ARCore: ${e.message}"
         }
+    }
+    
+    private fun setupDisplayGeometry() {
+        val display = windowManager.defaultDisplay
+        val rotation = display.rotation
+        
+        // Get display metrics
+        val displayMetrics = resources.displayMetrics
+        val width = displayMetrics.widthPixels
+        val height = displayMetrics.heightPixels
+        
+        Log.d(TAG, "CHECKPOINT 5: Display geometry - rotation: $rotation, size: ${width}x${height}")
+        
+        // Set display geometry on renderer
+        arCameraRenderer.setDisplayGeometry(rotation, width, height)
     }
     
     private suspend fun setupAugmentedImages() {

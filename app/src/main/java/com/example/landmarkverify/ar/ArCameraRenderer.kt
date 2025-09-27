@@ -61,11 +61,12 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
     private var cameraTextureId = 0
     
     // Full screen quad vertices (position + texture coordinates)
+    // Adjusted for proper camera orientation
     private val CAMERA_VERTICES = floatArrayOf(
-        -1.0f, -1.0f, 0.0f, 1.0f, // Bottom-left
-         1.0f, -1.0f, 1.0f, 1.0f, // Bottom-right  
-        -1.0f,  1.0f, 0.0f, 0.0f, // Top-left
-         1.0f,  1.0f, 1.0f, 0.0f  // Top-right
+        -1.0f, -1.0f, 1.0f, 1.0f, // Bottom-left -> Bottom-right (rotated)
+         1.0f, -1.0f, 1.0f, 0.0f, // Bottom-right -> Top-right
+        -1.0f,  1.0f, 0.0f, 1.0f, // Top-left -> Bottom-left  
+         1.0f,  1.0f, 0.0f, 0.0f  // Top-right -> Top-left
     )
     
     fun setSession(session: Session?) {
@@ -107,6 +108,13 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
         session?.setDisplayGeometry(displayRotation, width, height)
     }
     
+    // Frame update callback for geospatial tracking
+    private var frameUpdateCallback: ((Frame) -> Unit)? = null
+    
+    fun setFrameUpdateCallback(callback: (Frame) -> Unit) {
+        frameUpdateCallback = callback
+    }
+    
     override fun onDrawFrame(gl: GL10?) {
         // Clear screen
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
@@ -119,7 +127,11 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
             
             // Update and render camera background
             val frame = currentSession.update()
-            frame?.let { renderCameraBackground() }
+            frame?.let { 
+                renderCameraBackground()
+                // Notify activity for geospatial updates
+                frameUpdateCallback?.invoke(it)
+            }
             
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDrawFrame", e)
