@@ -22,50 +22,60 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
-        android:text="🤖 AI-Powered AR Verification"
+        android:layout_marginBottom="4dp"
+        android:text="🤖 NEURAL AR VERIFICATION SYSTEM"
         android:textColor="#00FFFF"
-        android:textSize="18sp"
+        android:textSize="16sp"
         android:textStyle="bold"
         android:shadowColor="#000000"
         android:shadowDx="2"
         android:shadowDy="2"
-        android:shadowRadius="4" />
+        android:shadowRadius="4"
+        android:letterSpacing="0.1" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="Advanced Geospatial Analysis System"
-        android:textColor="#CCCCCC"
-        android:textSize="12sp"
-        android:textStyle="italic" />
-
-    <TextView
-        android:id="@+id/status_text"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/status_panel_bg"
-        android:padding="12dp"
-        android:text="🔄 Initializing AR System..."
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:minLines="3"
-        android:gravity="center"
+        android:layout_marginBottom="12dp"
+        android:text="⚡ Advanced AI Geospatial Analysis • Real-time Processing ⚡"
+        android:textColor="#FFFF00"
+        android:textSize="10sp"
+        android:textStyle="italic"
         android:shadowColor="#000000"
         android:shadowDx="1"
         android:shadowDy="1"
         android:shadowRadius="2" />
 
+        <TextView
+        android:id="@+id/status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/status_panel_bg"
+        android:padding="14dp"
+        android:text="🧠 Initializing AI neural network..."
+        android:textColor="#00FF00"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:shadowColor="#000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="3"
+        android:letterSpacing="0.05" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:text="🛰️ Geospatial Data:"
-        android:textColor="#00FFFF"
-        android:textSize="14sp"
-        android:textStyle="bold" />
+        android:text="🛰️ NEURAL GEOSPATIAL ANALYSIS:"
+        android:textColor="#FF6600"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.1"
+        android:shadowColor="#000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="2" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -80,11 +90,15 @@
             android:layout_weight="1"
             android:background="@drawable/data_panel_bg"
             android:padding="8dp"
-            android:text="📍 Lat: Acquiring..."
+            android:text="📍 LAT: Acquiring..."
             android:textColor="#00FF00"
             android:textSize="10sp"
             android:fontFamily="monospace"
-            android:layout_marginEnd="2dp" />
+            android:layout_marginEnd="2dp"
+            android:shadowColor="#000000"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="2" />
 
         <TextView
             android:id="@+id/longitude_text"
@@ -93,11 +107,15 @@
             android:layout_weight="1"
             android:background="@drawable/data_panel_bg"
             android:padding="8dp"
-            android:text="📍 Lng: Acquiring..."
+            android:text="📍 LNG: Acquiring..."
             android:textColor="#00FF00"
             android:textSize="10sp"
             android:fontFamily="monospace"
-            android:layout_marginStart="2dp" />
+            android:layout_marginStart="2dp"
+            android:shadowColor="#000000"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="2" />
 
     </LinearLayout>
 
