@@ -6,8 +6,6 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
-import android.view.TextureView
-import android.graphics.SurfaceTexture
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -45,7 +43,6 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var sessionStateText: TextView
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
-    private lateinit var cameraTextureView: TextureView
     
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
@@ -90,36 +87,9 @@ class VerifyArActivity : AppCompatActivity() {
                 finish()
                 return
             }
-            cameraTextureView = findViewById(R.id.camera_texture_view) ?: run {
-                Log.e(TAG, "❌ Failed to find camera_texture_view in layout")
-                finish()
-                return
-            }
             
             statusText.text = "🔄 Initializing ARCore Geospatial..."
             Log.d(TAG, "✅ UI elements initialized successfully")
-            
-            // Set up camera texture listener
-            cameraTextureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                    Log.d(TAG, "📹 Camera surface texture available ($width x $height)")
-                    // Surface is ready, now we can initialize ARCore if not already done
-                }
-                
-                override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                    Log.d(TAG, "📹 Camera surface texture size changed ($width x $height)")
-                    setupCameraTexture()
-                }
-                
-                override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
-                    Log.d(TAG, "📹 Camera surface texture destroyed")
-                    return true
-                }
-                
-                override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
-                    // Called for each camera frame - too verbose to log
-                }
-            }
             
             checkPermissionsAndInitialize()
             
@@ -133,7 +103,6 @@ class VerifyArActivity : AppCompatActivity() {
         super.onResume()
         arSession?.resume()
         if (arSession != null) {
-            setupCameraTexture() // Ensure camera texture is set up
             startLocationTracking()
         }
     }
@@ -257,9 +226,6 @@ class VerifyArActivity : AppCompatActivity() {
                 statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
             }
             
-            // Set up camera texture for ARCore
-            setupCameraTexture()
-            
             // Start location tracking with a small delay to ensure session is fully ready
             lifecycleScope.launch {
                 delay(1000) // Give ARCore time to initialize
@@ -272,24 +238,6 @@ class VerifyArActivity : AppCompatActivity() {
                 statusText.text = "❌ Failed to create ARCore session: ${e.message}"
                 sessionStateText.text = "❌ Session Failed"
             }
-        }
-    }
-    
-    private fun setupCameraTexture() {
-        try {
-            val session = arSession ?: return
-            val surfaceTexture = cameraTextureView.surfaceTexture ?: return
-            
-            // Set camera texture for ARCore - this is crucial for camera access
-            session.setCameraTexture(surfaceTexture)
-            
-            // Set up display geometry so ARCore knows the camera orientation  
-            val displayRotation = windowManager.defaultDisplay.rotation
-            session.setDisplayGeometry(displayRotation, cameraTextureView.width, cameraTextureView.height)
-            
-            Log.d(TAG, "✅ Camera texture set up for ARCore (${cameraTextureView.width}x${cameraTextureView.height})")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting up camera texture", e)
         }
     }
     
