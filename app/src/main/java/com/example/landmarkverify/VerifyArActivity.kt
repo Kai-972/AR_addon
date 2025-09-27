@@ -37,7 +37,7 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
     private lateinit var arSurfaceView: GLSurfaceView
-    private lateinit var arCameraRenderer: ArCameraRenderer
+    private lateinit var arRenderer: ArRenderer
     private lateinit var arSessionManager: ArSessionManager
     private lateinit var imageLoader: AugmentedImageLoader
     private lateinit var geospatialManager: GeospatialManager
@@ -71,23 +71,8 @@ class VerifyArActivity : AppCompatActivity() {
         accuracyText = findViewById(R.id.accuracy_text)
         arSurfaceView = findViewById(R.id.ar_surface_view)
         
-                // CHECKPOINT 5: Setup AR surface view and renderer
-        arSurfaceView = findViewById(R.id.ar_surface_view)
-        arCameraRenderer = ArCameraRenderer()
-        arSurfaceView.setRenderer(arCameraRenderer)
-        arSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-        
-        // Setup display geometry and frame updates
-        setupDisplayGeometry()
-        
-        // Connect geospatial updates to renderer frames
-        arCameraRenderer.setFrameUpdateCallback { frame ->
-            if (::geospatialManager.isInitialized && ::arSessionManager.isInitialized) {
-                val session = arSessionManager.getSession()
-                session?.let { 
-                    geospatialManager.updateGeospatialPose(frame, it)
-                }
-            }
+        // CHECKPOINT 5: Try advanced renderer first, fallback to basic if it fails
+        setupArRenderer()
         }
         
         // CHECKPOINT 4: Manual capture button
@@ -139,17 +124,48 @@ class VerifyArActivity : AppCompatActivity() {
         checkPermissionsAndInitialize()
     }
     
+    private fun setupArRenderer() {
+        try {
+            Log.d(TAG, "Setting up AR renderer - trying advanced renderer first")
+            arRenderer = ArCameraRenderer()
+            arSurfaceView.setRenderer(arRenderer)
+            arSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+            
+            Log.d(TAG, "ArCameraRenderer setup successful")
+            
+        } catch (e: Exception) {
+            Log.w(TAG, "ArCameraRenderer failed, falling back to BasicCameraRenderer", e)
+            
+            try {
+                // Fallback to basic renderer
+                arRenderer = BasicCameraRenderer()
+                arSurfaceView.setRenderer(arRenderer)
+                arSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                
+                Log.d(TAG, "BasicCameraRenderer setup successful")
+                statusText.text = "Using basic renderer (no camera background)"
+                
+            } catch (fallbackError: Exception) {
+                Log.e(TAG, "Both renderers failed", fallbackError)
+                statusText.text = "OpenGL renderer initialization failed"
+                throw RuntimeException("Failed to initialize any renderer", fallbackError)
+            }
+        }
+    }
+    
     override fun onResume() {
         super.onResume()
         arSurfaceView.onResume()
         
         // Update display geometry on resume
-        setupDisplayGeometry()
+        if (::arRenderer.isInitialized) {
+            setupDisplayGeometry()
+        }
         
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             lifecycleScope.launch {
                 arSessionManager.resumeSession()
-                statusText.text = "CHECKPOINT 5: AR Camera active - Geospatial tracking"
+                statusText.text = "CHECKPOINT 5: AR active - Geospatial tracking"
             }
         }
     }
@@ -189,11 +205,11 @@ class VerifyArActivity : AppCompatActivity() {
                         statusText.text = "ARCore available, initializing session..."
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         
-                        // CHECKPOINT 5: Connect session to camera renderer
-                        arCameraRenderer.setSession(arSessionManager.getSession())
+                        // CHECKPOINT 5: Connect session to renderer
+                        arRenderer.setSession(arSessionManager.getSession())
                         
                         // CRITICAL FIX: Connect frame processing callback
-                        arCameraRenderer.setFrameUpdateCallback { frame ->
+                        arRenderer.setFrameUpdateCallback { frame ->
                             // Update geospatial tracking with each frame
                             arSessionManager.getSession()?.let { session ->
                                 geospatialManager.updateGeospatialPose(frame, session)
@@ -244,11 +260,11 @@ class VerifyArActivity : AppCompatActivity() {
                     lifecycleScope.launch {
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         
-                        // CHECKPOINT 5: Connect session to camera renderer
-                        arCameraRenderer.setSession(arSessionManager.getSession())
+                        // CHECKPOINT 5: Connect session to renderer
+                        arRenderer.setSession(arSessionManager.getSession())
                         
                         // CRITICAL FIX: Connect frame processing callback
-                        arCameraRenderer.setFrameUpdateCallback { frame ->
+                        arRenderer.setFrameUpdateCallback { frame ->
                             // Update geospatial tracking with each frame
                             arSessionManager.getSession()?.let { session ->
                                 geospatialManager.updateGeospatialPose(frame, session)
@@ -287,7 +303,7 @@ class VerifyArActivity : AppCompatActivity() {
         Log.d(TAG, "CHECKPOINT 5: Display geometry - rotation: $rotation, size: ${width}x${height}")
         
         // Set display geometry on renderer
-        arCameraRenderer.setDisplayGeometry(rotation, width, height)
+        arRenderer.setDisplayGeometry(rotation, width, height)
     }
     
     private suspend fun setupAugmentedImages() {

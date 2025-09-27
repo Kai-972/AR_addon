@@ -17,7 +17,7 @@ import javax.microedition.khronos.opengles.GL10
  * CHECKPOINT 5: AR Camera Renderer
  * Provides OpenGL context required for ARCore camera and pose tracking
  */
-class ArCameraRenderer : GLSurfaceView.Renderer {
+class ArCameraRenderer : ArRenderer {
     
     private companion object {
         const val TAG = "ArCameraRenderer"
@@ -93,19 +93,33 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         Log.d(TAG, "CHECKPOINT 5: AR Camera surface created")
         
-        // Clear color to black
-        GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
-        
-        // Create camera shader program
-        createCameraShaderProgram()
-        
-        // Create vertex buffer for full-screen quad
-        createVertexBuffer()
-        
-        // Generate camera texture
-        createCameraTexture()
-        
-        Log.d(TAG, "CHECKPOINT 5: AR Camera renderer initialized")
+        try {
+            // Log OpenGL version info
+            val version = GLES20.glGetString(GLES20.GL_VERSION)
+            val renderer = GLES20.glGetString(GLES20.GL_RENDERER)
+            val vendor = GLES20.glGetString(GLES20.GL_VENDOR)
+            Log.d(TAG, "OpenGL Version: $version")
+            Log.d(TAG, "OpenGL Renderer: $renderer")
+            Log.d(TAG, "OpenGL Vendor: $vendor")
+            
+            // Clear color to black
+            GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
+            
+            // Create camera shader program
+            createCameraShaderProgram()
+            
+            // Create vertex buffer for full-screen quad
+            createVertexBuffer()
+            
+            // Generate camera texture
+            createCameraTexture()
+            
+            Log.d(TAG, "CHECKPOINT 5: AR Camera renderer initialized successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "FATAL: Failed to initialize AR Camera renderer", e)
+            throw RuntimeException("OpenGL initialization failed", e)
+        }
     }
     
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -150,20 +164,54 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
     }
     
     private fun createCameraShaderProgram() {
-        val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
-        val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER)
-        
-        cameraProgram = GLES20.glCreateProgram()
-        GLES20.glAttachShader(cameraProgram, vertexShader)
-        GLES20.glAttachShader(cameraProgram, fragmentShader)
-        GLES20.glLinkProgram(cameraProgram)
-        
-        // Get attribute and uniform locations
-        cameraPositionAttribute = GLES20.glGetAttribLocation(cameraProgram, "a_Position")
-        cameraTexCoordAttribute = GLES20.glGetAttribLocation(cameraProgram, "a_TexCoord")
-        cameraTextureUniform = GLES20.glGetUniformLocation(cameraProgram, "u_CameraTexture")
-        
-        Log.d(TAG, "Camera shader program created: $cameraProgram")
+        try {
+            Log.d(TAG, "Creating camera shader program...")
+            
+            val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
+            if (vertexShader == 0) {
+                throw RuntimeException("Failed to load vertex shader")
+            }
+            
+            val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER)
+            if (fragmentShader == 0) {
+                throw RuntimeException("Failed to load fragment shader")
+            }
+            
+            cameraProgram = GLES20.glCreateProgram()
+            if (cameraProgram == 0) {
+                throw RuntimeException("Failed to create GL program")
+            }
+            
+            GLES20.glAttachShader(cameraProgram, vertexShader)
+            GLES20.glAttachShader(cameraProgram, fragmentShader)
+            GLES20.glLinkProgram(cameraProgram)
+            
+            // Check program linking
+            val linkStatus = IntArray(1)
+            GLES20.glGetProgramiv(cameraProgram, GLES20.GL_LINK_STATUS, linkStatus, 0)
+            if (linkStatus[0] == 0) {
+                val errorLog = GLES20.glGetProgramInfoLog(cameraProgram)
+                GLES20.glDeleteProgram(cameraProgram)
+                throw RuntimeException("Program linking failed: $errorLog")
+            }
+            
+            // Get attribute and uniform locations
+            cameraPositionAttribute = GLES20.glGetAttribLocation(cameraProgram, "a_Position")
+            cameraTexCoordAttribute = GLES20.glGetAttribLocation(cameraProgram, "a_TexCoord")
+            cameraTextureUniform = GLES20.glGetUniformLocation(cameraProgram, "u_CameraTexture")
+            
+            Log.d(TAG, "Camera shader program created successfully: $cameraProgram")
+            Log.d(TAG, "Attribute locations - position: $cameraPositionAttribute, texCoord: $cameraTexCoordAttribute")
+            Log.d(TAG, "Uniform location - texture: $cameraTextureUniform")
+            
+            // Clean up shaders (they're now linked into the program)
+            GLES20.glDeleteShader(vertexShader)
+            GLES20.glDeleteShader(fragmentShader)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create camera shader program", e)
+            throw e
+        }
     }
     
     private fun createVertexBuffer() {
@@ -217,6 +265,11 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
     
     private fun loadShader(type: Int, shaderCode: String): Int {
         val shader = GLES20.glCreateShader(type)
+        if (shader == 0) {
+            Log.e(TAG, "Failed to create shader of type: $type")
+            return 0
+        }
+        
         GLES20.glShaderSource(shader, shaderCode)
         GLES20.glCompileShader(shader)
         
@@ -225,11 +278,16 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
         GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0)
         
         if (compileStatus[0] == 0) {
-            Log.e(TAG, "Shader compilation failed: ${GLES20.glGetShaderInfoLog(shader)}")
+            val errorLog = GLES20.glGetShaderInfoLog(shader)
+            Log.e(TAG, "Shader compilation failed for type $type:")
+            Log.e(TAG, "Error: $errorLog")
+            Log.e(TAG, "Shader source:")
+            Log.e(TAG, shaderCode)
             GLES20.glDeleteShader(shader)
-            return 0
+            throw RuntimeException("Shader compilation failed: $errorLog")
         }
         
+        Log.d(TAG, "Shader compiled successfully: type=$type, id=$shader")
         return shader
     }
 }
