@@ -66,7 +66,7 @@ class VerifyArActivity : AppCompatActivity() {
         // Observe session state changes
         lifecycleScope.launch {
             arSessionManager.sessionState.collect { state ->
-                sessionStateText.text = state.name.replace("_", " ").lowercase().capitalize()
+                sessionStateText.text = state.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
                 Log.d(TAG, "Session state changed to: $state")
             }
         }
