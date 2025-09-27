@@ -328,9 +328,9 @@ class VerifyArActivity : AppCompatActivity() {
                     
                     // Dynamic delay - faster updates initially, slower later
                     val delayMs = when {
-                        attemptCount < 10 -> 1000 // First 10 seconds: check every 1s
-                        attemptCount < 30 -> 2000 // Next 40 seconds: check every 2s
-                        else -> 3000 // After 50 seconds: check every 3s
+                        attemptCount < 10 -> 1000L // First 10 seconds: check every 1s
+                        attemptCount < 30 -> 2000L // Next 40 seconds: check every 2s
+                        else -> 3000L // After 50 seconds: check every 3s
                     }
                     
                     delay(delayMs)
