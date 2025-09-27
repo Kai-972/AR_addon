@@ -192,6 +192,22 @@ class VerifyArActivity : AppCompatActivity() {
                         // CHECKPOINT 5: Connect session to camera renderer
                         arCameraRenderer.setSession(arSessionManager.getSession())
                         
+                        // CRITICAL FIX: Connect frame processing callback
+                        arCameraRenderer.setFrameUpdateCallback { frame ->
+                            // Update geospatial tracking with each frame
+                            arSessionManager.getSession()?.let { session ->
+                                geospatialManager.updateGeospatialPose(frame, session)
+                            }
+                            
+                            // Process frame for image detection
+                            processFrameForImageDetection(frame)
+                            
+                            // Process frame for image capture if location is accurate
+                            if (geospatialManager.isLocationAccurate()) {
+                                processFrameForCapture(frame)
+                            }
+                        }
+                        
                         setupAugmentedImages()
                         setupGeospatialTracking()
                         statusText.text = "CHECKPOINT 5: AR Camera & tracking initialized"
@@ -230,6 +246,22 @@ class VerifyArActivity : AppCompatActivity() {
                         
                         // CHECKPOINT 5: Connect session to camera renderer
                         arCameraRenderer.setSession(arSessionManager.getSession())
+                        
+                        // CRITICAL FIX: Connect frame processing callback
+                        arCameraRenderer.setFrameUpdateCallback { frame ->
+                            // Update geospatial tracking with each frame
+                            arSessionManager.getSession()?.let { session ->
+                                geospatialManager.updateGeospatialPose(frame, session)
+                            }
+                            
+                            // Process frame for image detection
+                            processFrameForImageDetection(frame)
+                            
+                            // Process frame for image capture if location is accurate
+                            if (geospatialManager.isLocationAccurate()) {
+                                processFrameForCapture(frame)
+                            }
+                        }
                         
                         setupAugmentedImages()
                         setupGeospatialTracking()

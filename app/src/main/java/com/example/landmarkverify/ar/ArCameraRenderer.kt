@@ -71,6 +71,17 @@ class ArCameraRenderer : GLSurfaceView.Renderer {
     
     fun setSession(session: Session?) {
         this.session = session
+        Log.d(TAG, "Session set: ${session != null}, camera texture ID: $cameraTextureId")
+        
+        // Set camera texture immediately if available
+        if (session != null && cameraTextureId != 0) {
+            try {
+                session.setCameraTextureName(cameraTextureId)
+                Log.d(TAG, "Camera texture name set immediately")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set camera texture name immediately", e)
+            }
+        }
     }
     
     fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
