@@ -2,6 +2,7 @@ package com.example.landmarkverify
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
@@ -10,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.landmarkverify.ar.ArCameraRenderer
 import com.example.landmarkverify.ar.ArSessionManager
 import com.example.landmarkverify.ar.AugmentedImageLoader
 import com.example.landmarkverify.ar.GeospatialManager
@@ -34,6 +36,8 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var sessionStateText: TextView
     private lateinit var locationText: TextView
     private lateinit var accuracyText: TextView
+    private lateinit var arSurfaceView: GLSurfaceView
+    private lateinit var arCameraRenderer: ArCameraRenderer
     private lateinit var arSessionManager: ArSessionManager
     private lateinit var imageLoader: AugmentedImageLoader
     private lateinit var geospatialManager: GeospatialManager
@@ -65,6 +69,14 @@ class VerifyArActivity : AppCompatActivity() {
         sessionStateText = findViewById(R.id.session_state_text)
         locationText = findViewById(R.id.location_text)
         accuracyText = findViewById(R.id.accuracy_text)
+        arSurfaceView = findViewById(R.id.ar_surface_view)
+        
+        // CHECKPOINT 5: Setup AR Camera Renderer
+        arCameraRenderer = ArCameraRenderer()
+        arSurfaceView.preserveEGLContextOnPause = true
+        arSurfaceView.setEGLContextClientVersion(2)
+        arSurfaceView.setRenderer(arCameraRenderer)
+        arSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         
         // CHECKPOINT 4: Manual capture button
         findViewById<android.widget.Button>(R.id.btn_capture_image).setOnClickListener {
@@ -78,7 +90,7 @@ class VerifyArActivity : AppCompatActivity() {
             }
         }
         
-        // Initialize AR components for CHECKPOINT 4
+        // Initialize AR components for CHECKPOINT 5
         arSessionManager = ArSessionManager()
         imageLoader = AugmentedImageLoader()
         geospatialManager = GeospatialManager()
@@ -138,16 +150,18 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        arSurfaceView.onResume()
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             lifecycleScope.launch {
                 arSessionManager.resumeSession()
-                statusText.text = "AR Session resumed - Geospatial tracking active"
+                statusText.text = "CHECKPOINT 5: AR Camera active - Geospatial tracking"
             }
         }
     }
     
     override fun onPause() {
         super.onPause()
+        arSurfaceView.onPause()
         if (::arSessionManager.isInitialized && arSessionManager.isSessionInitialized()) {
             arSessionManager.pauseSession()
             statusText.text = "AR Session paused"
@@ -180,9 +194,12 @@ class VerifyArActivity : AppCompatActivity() {
                         statusText.text = "ARCore available, initializing session..."
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         
+                        // CHECKPOINT 5: Connect session to camera renderer
+                        arCameraRenderer.setSession(arSessionManager.getSession())
+                        
                         setupAugmentedImages()
                         setupGeospatialTracking()
-                        statusText.text = "CHECKPOINT 4: Image capture & matching initialized"
+                        statusText.text = "CHECKPOINT 5: AR Camera & tracking initialized"
                     }
                     ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
                     ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
@@ -216,9 +233,12 @@ class VerifyArActivity : AppCompatActivity() {
                     lifecycleScope.launch {
                         arSessionManager.initializeSession(this@VerifyArActivity)
                         
+                        // CHECKPOINT 5: Connect session to camera renderer
+                        arCameraRenderer.setSession(arSessionManager.getSession())
+                        
                         setupAugmentedImages()
                         setupGeospatialTracking()
-                        statusText.text = "CHECKPOINT 4: Image capture & matching initialized"
+                        statusText.text = "CHECKPOINT 5: AR Camera & tracking initialized"
                     }
                 }
             }

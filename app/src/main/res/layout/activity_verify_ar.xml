@@ -4,7 +4,13 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- CHECKPOINT 3: Focus on geospatial data, no camera preview needed yet -->
+    <!-- CHECKPOINT 5: AR Camera Preview -->
+    <android.opengl.GLSurfaceView
+        android:id="@+id/ar_surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+    
+    <!-- UI Overlay -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
