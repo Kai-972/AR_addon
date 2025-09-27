@@ -60,15 +60,37 @@ class VerifyArActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_verify_ar)
+        Log.d(TAG, "VerifyArActivity onCreate started")
         
-        // Initialize UI
-        statusText = findViewById(R.id.status_text)
-        locationText = findViewById(R.id.location_text)
-        accuracyText = findViewById(R.id.accuracy_text)
-        
-        statusText.text = "Initializing ARCore Geospatial..."
-        checkPermissionsAndInitialize()
+        try {
+            setContentView(R.layout.activity_verify_ar)
+            
+            // Initialize UI with null checks
+            statusText = findViewById(R.id.status_text) ?: run {
+                Log.e(TAG, "❌ Failed to find status_text in layout")
+                finish()
+                return
+            }
+            locationText = findViewById(R.id.location_text) ?: run {
+                Log.e(TAG, "❌ Failed to find location_text in layout")
+                finish()
+                return
+            }
+            accuracyText = findViewById(R.id.accuracy_text) ?: run {
+                Log.e(TAG, "❌ Failed to find accuracy_text in layout")
+                finish()
+                return
+            }
+            
+            statusText.text = "🔄 Initializing ARCore Geospatial..."
+            Log.d(TAG, "✅ UI elements initialized successfully")
+            
+            checkPermissionsAndInitialize()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to initialize VerifyArActivity", e)
+            finish()
+        }
     }
     
     override fun onResume() {
@@ -155,7 +177,9 @@ class VerifyArActivity : AppCompatActivity() {
     private fun createArSession() {
         try {
             Log.d(TAG, "Creating ARCore session")
-            statusText.text = "Creating ARCore session..."
+            runOnUiThread {
+                statusText.text = "Creating ARCore session..."
+            }
             
             arSession = Session(this).apply {
                 val config = Config(this).apply {
@@ -167,7 +191,9 @@ class VerifyArActivity : AppCompatActivity() {
                         Log.i(TAG, "✅ Geospatial mode ENABLED successfully")
                     } else {
                         Log.e(TAG, "❌ Geospatial mode NOT SUPPORTED on this device")
-                        statusText.text = "Geospatial mode not supported on this device"
+                        runOnUiThread {
+                            statusText.text = "❌ Geospatial mode not supported on this device"
+                        }
                         return
                     }
                     
@@ -182,32 +208,54 @@ class VerifyArActivity : AppCompatActivity() {
                 Log.d(TAG, "ARCore session configured and resumed")
             }
             
-            statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
-            startLocationTracking()
+            runOnUiThread {
+                statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
+            }
+            
+            // Start location tracking with a small delay to ensure session is fully ready
+            lifecycleScope.launch {
+                delay(1000) // Give ARCore time to initialize
+                startLocationTracking()
+            }
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create ARCore session", e)
-            statusText.text = "Failed to create ARCore session: ${e.message}"
+            runOnUiThread {
+                statusText.text = "❌ Failed to create ARCore session: ${e.message}"
+            }
         }
     }
     
     private fun startLocationTracking() {
         if (arSession == null || !isGeospatialSupported) {
             Log.w(TAG, "Cannot start location tracking - session not ready or geospatial not supported")
+            runOnUiThread {
+                statusText.text = "❌ Geospatial not supported or session not ready"
+            }
             return
         }
         
-        Log.d(TAG, "Starting continuous location tracking...")
-        statusText.text = "🌍 Tracking your location..."
+        Log.d(TAG, "Starting location tracking...")
+        runOnUiThread {
+            statusText.text = "🌍 Tracking your location..."
+        }
         
+        // Start periodic location updates - safer approach
+        updateLocationPeriodically()
+    }
+    
+    private fun updateLocationPeriodically() {
         lifecycleScope.launch {
-            while (arSession != null) {
-                try {
+            try {
+                // Update location every 2 seconds, with safety checks
+                while (arSession != null && isGeospatialSupported && !isFinishing) {
                     updateLocationData()
-                    delay(1000) // Update every second
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in location tracking loop", e)
-                    break
+                    delay(2000) // Update every 2 seconds instead of 1
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in location tracking", e)
+                runOnUiThread {
+                    statusText.text = "❌ Location tracking error: ${e.message}"
                 }
             }
         }
