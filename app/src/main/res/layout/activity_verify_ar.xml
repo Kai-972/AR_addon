@@ -109,6 +109,15 @@
         android:textColor="#CCCCCC"
         android:textSize="11sp" />
 
+    <Button
+        android:id="@+id/btn_capture_image"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Capture & Analyze Image"
+        android:backgroundTint="#FF6600"
+        android:textColor="#FFFFFF" />
+
     </LinearLayout>
 
 </RelativeLayout>

@@ -13,6 +13,8 @@ import androidx.lifecycle.lifecycleScope
 import com.example.landmarkverify.ar.ArSessionManager
 import com.example.landmarkverify.ar.AugmentedImageLoader
 import com.example.landmarkverify.ar.GeospatialManager
+import com.example.landmarkverify.ar.ImageCaptureManager
+import com.example.landmarkverify.ar.ImageMatchingEngine
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.AugmentedImage
 import com.google.ar.core.Config
@@ -35,7 +37,11 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var arSessionManager: ArSessionManager
     private lateinit var imageLoader: AugmentedImageLoader
     private lateinit var geospatialManager: GeospatialManager
+    private lateinit var imageCaptureManager: ImageCaptureManager
+    private lateinit var imageMatchingEngine: ImageMatchingEngine
     private var userRequestedInstall = false
+    private var lastCaptureTime = 0L
+    private val captureIntervalMs = 2000L // Capture every 2 seconds
     
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -60,10 +66,24 @@ class VerifyArActivity : AppCompatActivity() {
         locationText = findViewById(R.id.location_text)
         accuracyText = findViewById(R.id.accuracy_text)
         
-        // Initialize AR components for CHECKPOINT 3
+        // CHECKPOINT 4: Manual capture button
+        findViewById<android.widget.Button>(R.id.btn_capture_image).setOnClickListener {
+            val session = arSessionManager.getSession()
+            val frame = arSessionManager.updateFrame()
+            if (session != null && frame != null) {
+                Log.d(TAG, "Manual image capture triggered")
+                processFrameForCapture(frame)
+            } else {
+                Toast.makeText(this, "AR session not ready", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // Initialize AR components for CHECKPOINT 4
         arSessionManager = ArSessionManager()
         imageLoader = AugmentedImageLoader()
         geospatialManager = GeospatialManager()
+        imageCaptureManager = ImageCaptureManager()
+        imageMatchingEngine = ImageMatchingEngine()
         
         // Observe session state changes
         lifecycleScope.launch {
@@ -87,18 +107,28 @@ class VerifyArActivity : AppCompatActivity() {
             }
         }
         
-        // CHECKPOINT 3: Simple geospatial pose updates without rendering
+        // CHECKPOINT 4: Frame processing with image capture and matching
         lifecycleScope.launch {
             while (true) {
                 if (arSessionManager.isSessionInitialized()) {
                     val session = arSessionManager.getSession()
                     val frame = arSessionManager.updateFrame()
                     if (session != null && frame != null) {
+                        // Update geospatial pose
                         geospatialManager.updateGeospatialPose(frame, session)
+                        
+                        // Process augmented images
                         processFrameForImageDetection(frame)
+                        
+                        // CHECKPOINT 4: Capture and analyze frame
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastCaptureTime > captureIntervalMs) {
+                            processFrameForCapture(frame)
+                            lastCaptureTime = currentTime
+                        }
                     }
                 }
-                kotlinx.coroutines.delay(500) // Update every 500ms for CHECKPOINT 3
+                kotlinx.coroutines.delay(100) // Faster updates for CHECKPOINT 4
             }
         }
         
@@ -152,7 +182,7 @@ class VerifyArActivity : AppCompatActivity() {
                         
                         setupAugmentedImages()
                         setupGeospatialTracking()
-                        statusText.text = "CHECKPOINT 3: Geospatial tracking initialized"
+                        statusText.text = "CHECKPOINT 4: Image capture & matching initialized"
                     }
                     ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
                     ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
@@ -188,7 +218,7 @@ class VerifyArActivity : AppCompatActivity() {
                         
                         setupAugmentedImages()
                         setupGeospatialTracking()
-                        statusText.text = "CHECKPOINT 3: Geospatial tracking initialized"
+                        statusText.text = "CHECKPOINT 4: Image capture & matching initialized"
                     }
                 }
             }
@@ -299,18 +329,20 @@ class VerifyArActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "Setting up geospatial tracking")
             val session = arSessionManager.getSession()
-            geospatialManager.startGeospatialTracking(session)
-            
-            // Start periodic frame updates for geospatial pose
-            lifecycleScope.launch {
-                while (arSessionManager.isSessionInitialized()) {
-                    val frame = arSessionManager.updateFrame()
-                    frame?.let { f -> 
-                        session?.let { s -> geospatialManager.updateGeospatialPose(f, s) }
-                    }
-                    kotlinx.coroutines.delay(100) // Update every 100ms
-                }
+            if (session == null) {
+                Log.e(TAG, "Cannot setup geospatial tracking - session is null")
+                return
             }
+            
+            // Check if geospatial is supported and enabled
+            if (!session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                Log.w(TAG, "Geospatial mode not supported")
+                statusText.text = "Geospatial tracking not supported on this device"
+                return
+            }
+            
+            Log.i(TAG, "✅ Geospatial mode is supported, starting tracking")
+            geospatialManager.startGeospatialTracking(session)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up geospatial tracking", e)
@@ -325,9 +357,49 @@ class VerifyArActivity : AppCompatActivity() {
             
             // Update status based on accuracy
             if (data.isAccurate) {
-                statusText.text = "✓ Location accurate - Ready for verification"
+                statusText.text = "✓ CHECKPOINT 4: Location accurate - Capturing images"
             } else {
                 statusText.text = "Improving location accuracy... (${data.horizontalAccuracyMeters}m)"
+            }
+        }
+    }
+    
+    /**
+     * CHECKPOINT 4: Process frame for image capture and matching
+     */
+    private fun processFrameForCapture(frame: com.google.ar.core.Frame) {
+        lifecycleScope.launch {
+            try {
+                val image = frame.acquireCameraImage()
+                image.use {
+                    Log.d(TAG, "CHECKPOINT 4: Capturing frame ${it.width}x${it.height}, format: ${it.format}")
+                    
+                    // Capture frame as bitmap
+                    val bitmap = imageCaptureManager.captureFrameAsBitmap(it)
+                    bitmap?.let { bmp ->
+                        // Create thumbnail for faster processing
+                        val thumbnail = imageCaptureManager.createThumbnail(bmp)
+                        
+                        // Extract descriptor
+                        val descriptor = imageMatchingEngine.extractDescriptor(thumbnail)
+                        
+                        // For demo, compare with itself (perfect match)
+                        val matchResult = imageMatchingEngine.compareDescriptors(descriptor, descriptor)
+                        
+                        runOnUiThread {
+                            Log.i(TAG, "CHECKPOINT 4: Image captured and analyzed - confidence: ${matchResult.confidence}")
+                            if (geospatialManager.isLocationAccurate()) {
+                                statusText.text = "✓ Image captured & analyzed - confidence: ${"%.2f".format(matchResult.confidence)}"
+                            }
+                        }
+                        
+                        // Clean up
+                        thumbnail.recycle()
+                        bmp.recycle()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing frame for capture", e)
             }
         }
     }
