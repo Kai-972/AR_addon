@@ -10,6 +10,8 @@ import android.location.LocationManager
 import android.location.LocationListener
 import android.location.Location
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.opengl.GLSurfaceView
 import android.os.Looper
 import javax.microedition.khronos.egl.EGLConfig
@@ -47,6 +49,7 @@ class VerifyArActivity : AppCompatActivity() {
     private var userRequestedInstall = false
     private var locationManager: LocationManager? = null
     private var lastKnownLocation: Location? = null
+    private var sessionStartTime: Long = 0
     
     // UI elements
     private lateinit var statusText: TextView
@@ -175,6 +178,14 @@ class VerifyArActivity : AppCompatActivity() {
                 
                 Log.d(TAG, "✅ Location services enabled - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
                 
+                // Check internet connectivity (required for ARCore Geospatial)
+                val hasInternet = checkInternetConnectivity()
+                if (!hasInternet) {
+                    Log.w(TAG, "⚠️ No internet connection - ARCore Geospatial requires internet")
+                    statusText.text = "⚠️ ARCore Geospatial requires internet connection"
+                    return@launch
+                }
+                
                 // Start Android GPS location updates to help bootstrap ARCore
                 startAndroidLocationUpdates()
                 
@@ -258,6 +269,7 @@ class VerifyArActivity : AppCompatActivity() {
                 
                 configure(config)
                 resume()
+                sessionStartTime = System.currentTimeMillis()
                 Log.d(TAG, "ARCore session configured and resumed")
                 runOnUiThread {
                     sessionStateText.text = "✅ Session Running"
@@ -347,6 +359,23 @@ class VerifyArActivity : AppCompatActivity() {
         
         surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         Log.d(TAG, "✅ Minimal GLSurfaceView renderer set up")
+    }
+    
+    private fun checkInternetConnectivity(): Boolean {
+        return try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            
+            val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            
+            Log.d(TAG, "🌐 Internet connectivity: $hasInternet")
+            hasInternet
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking internet connectivity", e)
+            false
+        }
     }
     
     private fun startAndroidLocationUpdates() {
@@ -491,11 +520,28 @@ class VerifyArActivity : AppCompatActivity() {
             
             Log.v(TAG, "✅ Earth object available, checking state...")
             
-            // Get current Earth state
+            // Get current Earth state with detailed logging
             val earthState = earth.earthState
             Log.i(TAG, "🌍 Earth state: $earthState")
+            
+            // Also check Earth tracking state 
+            val earthTrackingState = earth.trackingState
+            Log.i(TAG, "🌍 Earth tracking state: $earthTrackingState")
+            
             when (earthState) {
                 com.google.ar.core.Earth.EarthState.ENABLED -> {
+                    // Check if Earth is also tracking properly
+                    if (earthTrackingState != com.google.ar.core.TrackingState.TRACKING) {
+                        Log.w(TAG, "🌍 Earth enabled but not tracking yet: $earthTrackingState")
+                        runOnUiThread {
+                            statusText.text = "🔄 Earth enabled, waiting for tracking... ($earthTrackingState)"
+                            sessionStateText.text = "🌍 Earth: $earthTrackingState"
+                        }
+                        return
+                    }
+                    
+                    Log.d(TAG, "✅ Earth is ENABLED and TRACKING - getting geospatial pose")
+                    
                     // SUCCESS! Get geospatial pose
                     val geospatialPose = try {
                         earth.cameraGeospatialPose
@@ -508,18 +554,32 @@ class VerifyArActivity : AppCompatActivity() {
                         return
                     }
                     
+                    if (geospatialPose == null) {
+                        Log.e(TAG, "❌ Geospatial pose is null")
+                        runOnUiThread {
+                            statusText.text = "❌ Geospatial pose is null"
+                            sessionStateText.text = "❌ Null Pose"
+                        }
+                        return
+                    }
+                    
                     val latitude = geospatialPose.latitude
                     val longitude = geospatialPose.longitude
                     val altitude = geospatialPose.altitude
                     val horizontalAccuracy = geospatialPose.horizontalAccuracy
                     val heading = geospatialPose.heading
                     
+                    Log.v(TAG, "📍 Raw ARCore pose: lat=$latitude, lng=$longitude, acc=$horizontalAccuracy")
+                    
                     // Check if coordinates are valid (not zero/null location)
                     val hasValidCoordinates = latitude != 0.0 && longitude != 0.0
                     val hasReasonableAccuracy = horizontalAccuracy > 0.0f && horizontalAccuracy < 1000.0f
                     val isAccurate = horizontalAccuracy <= 10.0f && hasValidCoordinates && hasReasonableAccuracy
                     
-                    Log.d(TAG, "📍 Location validation - Coords valid: $hasValidCoordinates, Accuracy reasonable: $hasReasonableAccuracy, Accurate: $isAccurate")
+                    // Check session runtime
+                    val sessionRuntime = (System.currentTimeMillis() - sessionStartTime) / 1000
+                    
+                    Log.d(TAG, "📍 Location validation - Coords valid: $hasValidCoordinates, Accuracy reasonable: $hasReasonableAccuracy, Accurate: $isAccurate, Session runtime: ${sessionRuntime}s")
                     
                     runOnUiThread {
                         locationText.text = "📍 Lat: ${"%.6f".format(latitude)} (ARCore)\n" +
@@ -539,7 +599,11 @@ class VerifyArActivity : AppCompatActivity() {
                         statusText.text = when {
                             !hasValidCoordinates -> {
                                 if (lastKnownLocation != null) {
-                                    "🔄 ARCore Geospatial initializing... (Android GPS: ${lastKnownLocation!!.accuracy}m)"
+                                    if (sessionRuntime < 30) {
+                                        "🔄 ARCore Geospatial initializing... (${sessionRuntime}s, Android GPS: ${lastKnownLocation!!.accuracy}m)"
+                                    } else {
+                                        "⏰ ARCore taking longer than expected (${sessionRuntime}s) - check internet & GPS"
+                                    }
                                 } else {
                                     "❌ Waiting for GPS coordinates... (currently 0,0)"
                                 }
