@@ -20,8 +20,8 @@ class GeospatialManager {
     private val _geospatialPose = MutableStateFlow<GeospatialPose?>(null)
     val geospatialPose: StateFlow<GeospatialPose?> = _geospatialPose.asStateFlow()
     
-    private val _earthState = MutableStateFlow<Earth.EarthState>(Earth.EarthState.DISABLED)
-    val earthState: StateFlow<Earth.EarthState> = _earthState.asStateFlow()
+    private val _earthState = MutableStateFlow<Int>(-1) // -1 = unknown, 0 = disabled, 1 = enabled
+    val earthState: StateFlow<Int> = _earthState.asStateFlow()
     
     private val _isGeospatialReady = MutableStateFlow(false)
     val isGeospatialReady: StateFlow<Boolean> = _isGeospatialReady.asStateFlow()
@@ -44,11 +44,16 @@ class GeospatialManager {
             Log.d(TAG, "Starting geospatial tracking")
             val earth = it.earth
             if (earth != null) {
-                _earthState.value = earth.earthState
-                Log.d(TAG, "Earth state: ${earth.earthState}")
+                val earthStateValue = try {
+                    earth.earthState.ordinal
+                } catch (e: Exception) {
+                    -1
+                }
+                _earthState.value = earthStateValue
+                Log.d(TAG, "Earth state: $earthStateValue")
             } else {
                 Log.w(TAG, "Earth is null - geospatial not supported")
-                _earthState.value = Earth.EarthState.DISABLED
+                _earthState.value = 0 // disabled
             }
         } ?: Log.w(TAG, "Cannot start geospatial tracking - session is null")
     }
@@ -62,11 +67,15 @@ class GeospatialManager {
                 return
             }
             
-            val currentEarthState = earth.earthState
+            val currentEarthState = try {
+                earth.earthState.ordinal
+            } catch (e: Exception) {
+                -1
+            }
             _earthState.value = currentEarthState
             
             when (currentEarthState) {
-                Earth.EarthState.ENABLED -> {
+                1 -> { // ENABLED state (typically ordinal 1)
                     val cameraGeospatialPose = earth.cameraGeospatialPose
                     _geospatialPose.value = cameraGeospatialPose
                     
@@ -87,15 +96,15 @@ class GeospatialManager {
                     Log.v(TAG, "Geospatial pose - Lat: ${data.latitude}, Lng: ${data.longitude}, " +
                             "Accuracy: ${data.horizontalAccuracyMeters}m, Confidence: ${data.poseConfidence}")
                 }
-                Earth.EarthState.ERROR_INTERNAL -> {
+                2 -> { // ERROR_INTERNAL (typically ordinal 2)
                     Log.e(TAG, "Earth state error: Internal error")
                     _isGeospatialReady.value = false
                 }
-                Earth.EarthState.ERROR_NOT_AUTHORIZED -> {
+                3 -> { // ERROR_NOT_AUTHORIZED (typically ordinal 3)
                     Log.e(TAG, "Earth state error: Not authorized")
                     _isGeospatialReady.value = false
                 }
-                Earth.EarthState.ERROR_RESOURCE_EXHAUSTED -> {
+                4 -> { // ERROR_RESOURCE_EXHAUSTED (typically ordinal 4)
                     Log.e(TAG, "Earth state error: Resource exhausted")
                     _isGeospatialReady.value = false
                 }
