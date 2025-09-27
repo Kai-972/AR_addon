@@ -16,6 +16,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -55,18 +56,7 @@ class VerifyArActivity : AppCompatActivity() {
     private var cameraExecutor: ExecutorService? = null
     private var camera: Camera? = null
     
-    // AI Verification components
-    private var verificationStage = 0
-    private var isVerifying = false
-    private var verificationStartTime = 0L
-    private val verificationStages = listOf(
-        "🔍 Scanning environment...",
-        "🎯 Analyzing GPS coordinates...",
-        "🧠 Processing AI landmarks detection...",
-        "📊 Cross-referencing location data...",
-        "🛰️ Validating geospatial accuracy...",
-        "✅ Verification complete!"
-    )
+
     
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
