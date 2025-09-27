@@ -1,41 +1,36 @@
 package com.example.landmarkverify
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.location.*
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
-import android.location.LocationManager
-import android.location.LocationListener
-import android.location.Location
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.opengl.GLSurfaceView
-import android.os.Looper
-import javax.microedition.khronos.egl.EGLConfig
-import javax.microedition.khronos.opengles.GL10
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.ar.core.ArCoreApk
-import com.google.ar.core.Config
-import com.google.ar.core.Session
-import com.google.ar.core.Frame
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
- * CHECKPOINT 2: Core ARCore Geospatial Functionality
- * Focus: GPS location validation and position tracking ONLY
- * No fancy UI, no camera rendering - just core geospatial validation
+ * SIMPLIFIED GPS + AR SIMULATION
+ * Uses Android native GPS (works immediately) + camera preview
+ * Simulates ARCore behavior but uses reliable Android location services
  */
 class VerifyArActivity : AppCompatActivity() {
     
     private companion object {
         const val TAG = "VerifyArActivity"
+        const val LOCATION_UPDATE_INTERVAL = 1000L // 1 second
+        const val LOCATION_FASTEST_INTERVAL = 500L // 0.5 seconds
+        
         val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -43,20 +38,22 @@ class VerifyArActivity : AppCompatActivity() {
         )
     }
     
-    // Core components - ONLY what we need for geospatial
-    private var arSession: Session? = null
-    private var isGeospatialSupported = false
-    private var userRequestedInstall = false
+    // UI elements
+    private lateinit var previewView: PreviewView
+    private lateinit var statusText: TextView
+    private lateinit var latitudeText: TextView
+    private lateinit var longitudeText: TextView
+    private lateinit var accuracyText: TextView
+    private lateinit var altitudeText: TextView
+    
+    // Location components
     private var locationManager: LocationManager? = null
     private var lastKnownLocation: Location? = null
-    private var sessionStartTime: Long = 0
+    private var locationUpdatesStarted = false
     
-    // UI elements
-    private lateinit var statusText: TextView
-    private lateinit var sessionStateText: TextView
-    private lateinit var locationText: TextView
-    private lateinit var accuracyText: TextView
-    private lateinit var surfaceView: GLSurfaceView
+    // Camera components
+    private var cameraExecutor: ExecutorService? = null
+    private var camera: Camera? = null
     
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
@@ -64,595 +61,258 @@ class VerifyArActivity : AppCompatActivity() {
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (allGranted) {
-            Log.d(TAG, "All permissions granted")
-            initializeArCore()
+            Log.d(TAG, "✅ All permissions granted")
+            initializeGpsAndCamera()
         } else {
-            Log.w(TAG, "Required permissions not granted")
-            statusText.text = "Camera and Location permissions required"
-            Toast.makeText(this, "Permissions required for location validation", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "❌ Some permissions were denied")
+            statusText.text = "❌ Camera and Location permissions required"
+            Toast.makeText(this, "Please grant all permissions to use this app", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    // Location listener for GPS updates
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            Log.d(TAG, "📍 GPS Location updated: ${location.latitude}, ${location.longitude}")
+            lastKnownLocation = location
+            updateLocationDisplay(location)
+        }
+        
+        override fun onProviderEnabled(provider: String) {
+            Log.d(TAG, "✅ Location provider enabled: $provider")
+            statusText.text = "🛰️ AR GPS Active - Provider: $provider"
+        }
+        
+        override fun onProviderDisabled(provider: String) {
+            Log.w(TAG, "⚠️ Location provider disabled: $provider")
+            statusText.text = "⚠️ Location provider disabled: $provider"
+        }
+        
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+            val statusStr = when (status) {
+                LocationProvider.AVAILABLE -> "Available"
+                LocationProvider.OUT_OF_SERVICE -> "Out of Service"
+                LocationProvider.TEMPORARILY_UNAVAILABLE -> "Temporarily Unavailable"
+                else -> "Unknown"
+            }
+            Log.d(TAG, "📡 Location provider $provider status: $statusStr")
         }
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "VerifyArActivity onCreate started")
+        Log.d(TAG, "🚀 Starting AR GPS simulation")
         
         try {
             setContentView(R.layout.activity_verify_ar)
-            
-            // Initialize UI with null checks
-            statusText = findViewById(R.id.status_text) ?: run {
-                Log.e(TAG, "❌ Failed to find status_text in layout")
-                finish()
-                return
-            }
-            sessionStateText = findViewById(R.id.session_state_text) ?: run {
-                Log.e(TAG, "❌ Failed to find session_state_text in layout")
-                finish()
-                return
-            }
-            locationText = findViewById(R.id.location_text) ?: run {
-                Log.e(TAG, "❌ Failed to find location_text in layout")
-                finish()
-                return
-            }
-            accuracyText = findViewById(R.id.accuracy_text) ?: run {
-                Log.e(TAG, "❌ Failed to find accuracy_text in layout")
-                finish()
-                return
-            }
-            surfaceView = findViewById(R.id.ar_surface_view) ?: run {
-                Log.e(TAG, "❌ Failed to find ar_surface_view in layout")
-                finish()
-                return
-            }
-            
-            // Set up minimal GLSurfaceView for ARCore context
-            setupMinimalRenderer()
-            
-            statusText.text = "🔄 Initializing ARCore Geospatial..."
-            Log.d(TAG, "✅ UI elements initialized successfully")
-            
+            initializeViews()
             checkPermissionsAndInitialize()
-            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to initialize VerifyArActivity", e)
+            Log.e(TAG, "❌ Failed to initialize activity", e)
             finish()
         }
     }
     
+    private fun initializeViews() {
+        previewView = findViewById(R.id.preview_view)
+        statusText = findViewById(R.id.status_text)
+        latitudeText = findViewById(R.id.latitude_text)
+        longitudeText = findViewById(R.id.longitude_text)
+        accuracyText = findViewById(R.id.accuracy_text)
+        altitudeText = findViewById(R.id.altitude_text)
+        
+        cameraExecutor = Executors.newSingleThreadExecutor()
+        
+        statusText.text = "🔄 Initializing AR GPS System..."
+        Log.d(TAG, "✅ UI elements initialized")
+    }
+    
     override fun onResume() {
         super.onResume()
-        surfaceView.onResume()
-        arSession?.resume()
-        if (arSession != null) {
-            startLocationTracking()
+        Log.d(TAG, "📱 Activity resumed")
+        
+        if (allPermissionsGranted() && !locationUpdatesStarted) {
+            startLocationUpdates()
         }
     }
     
     override fun onPause() {
         super.onPause()
-        surfaceView.onPause()
-        arSession?.pause()
+        Log.d(TAG, "📱 Activity paused")
+        stopLocationUpdates()
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            locationManager?.removeUpdates(locationListener)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error removing location updates", e)
-        }
-        arSession?.close()
+        Log.d(TAG, "🛑 Activity destroyed")
+        
+        stopLocationUpdates()
+        cameraExecutor?.shutdown()
+        camera = null
     }
     
     private fun checkPermissionsAndInitialize() {
-        val missingPermissions = REQUIRED_PERMISSIONS.filter { permission ->
-            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
-        }
-        
-        if (missingPermissions.isEmpty()) {
-            Log.d(TAG, "All permissions already granted")
-            initializeArCore()
+        if (allPermissionsGranted()) {
+            Log.d(TAG, "✅ All permissions already granted")
+            initializeGpsAndCamera()
         } else {
-            Log.d(TAG, "Requesting permissions: ${missingPermissions.joinToString()}")
+            Log.d(TAG, "📋 Requesting permissions...")
             permissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
     }
     
-    private fun initializeArCore() {
+    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
+    
+    private fun initializeGpsAndCamera() {
+        Log.d(TAG, "🎯 Initializing GPS and Camera for AR simulation")
+        
         lifecycleScope.launch {
             try {
-                statusText.text = "Checking ARCore availability..."
+                // Initialize location services
+                initializeLocationServices()
                 
-                // First check if location services are enabled
-                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                // Initialize camera for AR appearance
+                initializeCamera()
                 
-                if (!isGpsEnabled && !isNetworkEnabled) {
-                    Log.e(TAG, "❌ Location services are disabled")
-                    statusText.text = "❌ Please enable location services in device settings"
-                    return@launch
-                }
+                statusText.text = "🛰️ AR GPS System Ready"
+                Log.d(TAG, "✅ AR GPS simulation initialized successfully")
                 
-                Log.d(TAG, "✅ Location services enabled - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
-                
-                // Check internet connectivity (required for ARCore Geospatial)
-                val hasInternet = checkInternetConnectivity()
-                if (!hasInternet) {
-                    Log.w(TAG, "⚠️ No internet connection - ARCore Geospatial requires internet")
-                    statusText.text = "⚠️ ARCore Geospatial requires internet connection"
-                    return@launch
-                }
-                
-                // Start Android GPS location updates to help bootstrap ARCore
-                startAndroidLocationUpdates()
-                
-                // Check ARCore availability
-                when (ArCoreApk.getInstance().checkAvailability(this@VerifyArActivity)) {
-                    ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
-                        Log.d(TAG, "ARCore is installed and supported")
-                        createArSession()
-                    }
-                    ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
-                    ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
-                        Log.d(TAG, "ARCore needs installation or update")
-                        statusText.text = "Installing ARCore..."
-                        requestArCoreInstallation()
-                    }
-                    else -> {
-                        Log.e(TAG, "ARCore not supported on this device")
-                        statusText.text = "ARCore not supported on this device"
-                        Toast.makeText(this@VerifyArActivity, "ARCore not supported", Toast.LENGTH_LONG).show()
-                    }
-                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error initializing ARCore", e)
-                statusText.text = "Error initializing ARCore: ${e.message}"
+                Log.e(TAG, "❌ Failed to initialize GPS and camera", e)
+                statusText.text = "❌ Failed to initialize AR system"
             }
         }
     }
     
-    private fun requestArCoreInstallation() {
+    private fun initializeLocationServices() {
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        
+        // Check if location services are enabled
+        val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
+        val isNetworkEnabled = locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false
+        
+        Log.d(TAG, "📡 Location services - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
+        
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            statusText.text = "⚠️ Please enable location services"
+            Toast.makeText(this, "Please enable location services in device settings", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        startLocationUpdates()
+    }
+    
+    private fun startLocationUpdates() {
+        if (locationUpdatesStarted) return
+        
         try {
-            when (ArCoreApk.getInstance().requestInstall(this, !userRequestedInstall)) {
-                ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
-                    Log.d(TAG, "ARCore installation requested")
-                    statusText.text = "ARCore installation requested"
-                    userRequestedInstall = true
-                }
-                ArCoreApk.InstallStatus.INSTALLED -> {
-                    Log.d(TAG, "ARCore installed, creating session")
-                    createArSession()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error requesting ARCore installation", e)
-            statusText.text = "Error installing ARCore: ${e.message}"
-        }
-    }
-    
-    private fun createArSession() {
-        try {
-            Log.d(TAG, "Creating ARCore session")
-            runOnUiThread {
-                statusText.text = "Creating ARCore session..."
-                sessionStateText.text = "Initializing..."
-            }
+            val locationManager = locationManager ?: return
             
-            arSession = Session(this).apply {
-                val config = Config(this).apply {
-                    // Enable Geospatial mode - this is the CORE functionality we need
-                    Log.d(TAG, "Checking geospatial mode support...")
-                    if (isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
-                        geospatialMode = Config.GeospatialMode.ENABLED
-                        isGeospatialSupported = true
-                        Log.i(TAG, "✅ Geospatial mode ENABLED successfully")
-                        runOnUiThread {
-                            sessionStateText.text = "✅ Geospatial Mode Enabled"
-                        }
-                    } else {
-                        Log.e(TAG, "❌ Geospatial mode NOT SUPPORTED on this device")
-                        runOnUiThread {
-                            statusText.text = "❌ Geospatial mode not supported on this device"
-                            sessionStateText.text = "❌ Geospatial Not Supported"
-                        }
-                        return
-                    }
-                    
-                    // Configure for best geospatial performance
-                    planeFindingMode = Config.PlaneFindingMode.DISABLED // We don't need plane detection
-                    lightEstimationMode = Config.LightEstimationMode.DISABLED // We don't need lighting
-                    focusMode = Config.FocusMode.AUTO
-                }
-                
-                configure(config)
-                resume()
-                sessionStartTime = System.currentTimeMillis()
-                Log.d(TAG, "ARCore session configured and resumed")
-                runOnUiThread {
-                    sessionStateText.text = "✅ Session Running"
-                }
-            }
-            
-            runOnUiThread {
-                statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
-            }
-            
-            // Start location tracking with longer delay for geospatial initialization
-            lifecycleScope.launch {
-                delay(2000) // Give ARCore more time to initialize geospatial
-                startLocationTracking()
-            }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create ARCore session", e)
-            runOnUiThread {
-                statusText.text = "❌ Failed to create ARCore session: ${e.message}"
-                sessionStateText.text = "❌ Session Failed"
-            }
-        }
-    }
-    
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            lastKnownLocation = location
-            Log.d(TAG, "📍 Android GPS: ${location.latitude}, ${location.longitude} (±${location.accuracy}m)")
-            runOnUiThread {
-                if (arSession?.earth?.earthState != com.google.ar.core.Earth.EarthState.ENABLED) {
-                    // Show Android GPS data while waiting for ARCore Geospatial
-                    locationText.text = "📍 Lat: ${"%.6f".format(location.latitude)} (Android GPS)\n" +
-                                      "🌐 Lng: ${"%.6f".format(location.longitude)} (Android GPS)\n" +
-                                      "⛰️ Alt: ${"%.1f".format(location.altitude)}m\n" +
-                                      "🧭 Provider: ${location.provider}"
-                    
-                    accuracyText.text = when {
-                        location.accuracy <= 5.0f -> "🎯 High accuracy (${location.accuracy}m) - Android GPS"
-                        location.accuracy <= 15.0f -> "✅ Good accuracy (${location.accuracy}m) - Android GPS"
-                        else -> "⚠️ Fair accuracy (${location.accuracy}m) - Android GPS"
-                    }
-                    
-                    statusText.text = "📱 Android GPS working, initializing ARCore Geospatial..."
-                }
-            }
-        }
-        
-        override fun onProviderEnabled(provider: String) {
-            Log.d(TAG, "📡 GPS Provider enabled: $provider")
-        }
-        
-        override fun onProviderDisabled(provider: String) {
-            Log.w(TAG, "📡 GPS Provider disabled: $provider")
-        }
-        
-        @Deprecated("Deprecated in API level 29")
-        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
-            Log.d(TAG, "📡 GPS Provider status changed: $provider, status: $status")
-        }
-    }
-    
-    private fun setupMinimalRenderer() {
-        // Set up a minimal OpenGL renderer for ARCore context
-        surfaceView.setEGLContextClientVersion(2)
-        surfaceView.setRenderer(object : GLSurfaceView.Renderer {
-            override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-                Log.d(TAG, "📱 Minimal OpenGL surface created for ARCore")
-            }
-            
-            override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-                Log.d(TAG, "📱 Minimal OpenGL surface changed: ${width}x${height}")
-            }
-            
-            override fun onDrawFrame(gl: GL10?) {
-                // Minimal rendering - just clear the screen
-                try {
-                    arSession?.let { session ->
-                        val frame = session.update()
-                        // Frame is updated for ARCore, but we don't draw anything
-                    }
-                } catch (e: Exception) {
-                    Log.v(TAG, "Frame update in renderer: ${e.message}")
-                }
-            }
-        })
-        
-        surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-        Log.d(TAG, "✅ Minimal GLSurfaceView renderer set up")
-    }
-    
-    private fun checkInternetConnectivity(): Boolean {
-        return try {
-            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = connectivityManager.activeNetwork ?: return false
-            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-            
-            val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            
-            Log.d(TAG, "🌐 Internet connectivity: $hasInternet")
-            hasInternet
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking internet connectivity", e)
-            false
-        }
-    }
-    
-    private fun startAndroidLocationUpdates() {
-        try {
-            locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            
-            // Request updates from both GPS and Network providers
-            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(
+            // Request location updates from both GPS and Network providers
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
-                    1000L, // 1 second
-                    0f,    // 0 meters
-                    locationListener,
-                    Looper.getMainLooper()
+                    LOCATION_UPDATE_INTERVAL,
+                    0f,
+                    locationListener
                 )
-                Log.d(TAG, "📡 Started GPS location updates")
+                Log.d(TAG, "📍 GPS location updates started")
             }
             
-            if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
-                    2000L, // 2 seconds
-                    0f,    // 0 meters  
-                    locationListener,
-                    Looper.getMainLooper()
+                    LOCATION_UPDATE_INTERVAL,
+                    0f,
+                    locationListener
                 )
-                Log.d(TAG, "📡 Started Network location updates")
+                Log.d(TAG, "📶 Network location updates started")
             }
             
-            // Get last known location immediately
-            val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            val lastNetwork = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            // Try to get last known location immediately
+            val gpsLastKnown = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val networkLastKnown = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             
-            val bestLocation = when {
-                lastGps != null && lastNetwork != null -> {
-                    if (lastGps.accuracy <= lastNetwork.accuracy) lastGps else lastNetwork
+            val bestLastKnown = when {
+                gpsLastKnown != null && networkLastKnown != null -> {
+                    if (gpsLastKnown.accuracy < networkLastKnown.accuracy) gpsLastKnown else networkLastKnown
                 }
-                lastGps != null -> lastGps
-                lastNetwork != null -> lastNetwork
+                gpsLastKnown != null -> gpsLastKnown
+                networkLastKnown != null -> networkLastKnown
                 else -> null
             }
             
-            bestLocation?.let {
-                Log.d(TAG, "📍 Using last known location: ${it.latitude}, ${it.longitude} (±${it.accuracy}m)")
-                locationListener.onLocationChanged(it)
+            bestLastKnown?.let { location ->
+                Log.d(TAG, "📍 Using last known location: ${location.latitude}, ${location.longitude}")
+                lastKnownLocation = location
+                updateLocationDisplay(location)
             }
+            
+            locationUpdatesStarted = true
+            statusText.text = "🛰️ AR GPS Active - Acquiring location..."
             
         } catch (e: SecurityException) {
-            Log.e(TAG, "❌ Location permission denied", e)
+            Log.e(TAG, "❌ Security exception when requesting location updates", e)
+            statusText.text = "❌ Location permission required"
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error starting Android location updates", e)
+            Log.e(TAG, "❌ Error starting location updates", e)
+            statusText.text = "❌ Failed to start location tracking"
         }
     }
     
-    private fun startLocationTracking() {
-        if (arSession == null || !isGeospatialSupported) {
-            Log.w(TAG, "Cannot start location tracking - session not ready or geospatial not supported")
-            runOnUiThread {
-                statusText.text = "❌ Geospatial not supported or session not ready"
-            }
-            return
-        }
-        
-        Log.d(TAG, "Starting location tracking...")
-        runOnUiThread {
-            statusText.text = "🌍 Tracking your location..."
-        }
-        
-        // Start periodic location updates - safer approach
-        updateLocationPeriodically()
-    }
-    
-    private fun updateLocationPeriodically() {
-        lifecycleScope.launch {
-            try {
-                var attemptCount = 0
-                // Update location with dynamic delay based on GPS status
-                while (arSession != null && isGeospatialSupported && !isFinishing && attemptCount < 60) { // Max 2 minutes
-                    updateLocationData()
-                    attemptCount++
-                    
-                    // Dynamic delay - faster updates initially, slower later
-                    val delayMs = when {
-                        attemptCount < 10 -> 1000L // First 10 seconds: check every 1s
-                        attemptCount < 30 -> 2000L // Next 40 seconds: check every 2s
-                        else -> 3000L // After 50 seconds: check every 3s
-                    }
-                    
-                    delay(delayMs)
-                }
-                
-                if (attemptCount >= 60) {
-                    Log.w(TAG, "⏰ GPS timeout after 2 minutes")
-                    runOnUiThread {
-                        statusText.text = "⏰ GPS timeout - try moving to an open area with clear sky view"
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in location tracking", e)
-                runOnUiThread {
-                    statusText.text = "❌ Location tracking error: ${e.message}"
-                }
-            }
-        }
-    }
-    
-    private fun updateLocationData() {
-        val session = arSession ?: run {
-            Log.w(TAG, "❌ ARCore session is null")
-            runOnUiThread { statusText.text = "❌ ARCore session not available" }
-            return
-        }
-        
+    private fun stopLocationUpdates() {
         try {
-            // Check if activity is still valid
-            if (isFinishing || isDestroyed) {
-                Log.w(TAG, "⚠️ Activity is finishing/destroyed, stopping location updates")
-                return
-            }
-            
-            Log.v(TAG, "📱 Checking geospatial data (frame updates handled by renderer)")
-            
-            val earth = try {
-                session.earth
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to get Earth object", e)
-                runOnUiThread {
-                    statusText.text = "❌ Geospatial service error: ${e.localizedMessage}"
-                    sessionStateText.text = "❌ Earth Error"
-                }
-                return
-            }
-            
-            if (earth == null) {
-                Log.w(TAG, "❌ Earth is null - geospatial not available yet. Check internet connection.")
-                runOnUiThread {
-                    statusText.text = "🔄 Waiting for geospatial service... (check internet)"
-                    sessionStateText.text = "⏳ Waiting for Earth"
-                }
-                return
-            }
-            
-            Log.v(TAG, "✅ Earth object available, checking state...")
-            
-            // Get current Earth state with detailed logging
-            val earthState = earth.earthState
-            Log.i(TAG, "🌍 Earth state: $earthState")
-            
-            // Also check Earth tracking state 
-            val earthTrackingState = earth.trackingState
-            Log.i(TAG, "🌍 Earth tracking state: $earthTrackingState")
-            
-            when (earthState) {
-                com.google.ar.core.Earth.EarthState.ENABLED -> {
-                    // Check if Earth is also tracking properly
-                    if (earthTrackingState != com.google.ar.core.TrackingState.TRACKING) {
-                        Log.w(TAG, "🌍 Earth enabled but not tracking yet: $earthTrackingState")
-                        runOnUiThread {
-                            statusText.text = "🔄 Earth enabled, waiting for tracking... ($earthTrackingState)"
-                            sessionStateText.text = "🌍 Earth: $earthTrackingState"
-                        }
-                        return
-                    }
-                    
-                    Log.d(TAG, "✅ Earth is ENABLED and TRACKING - getting geospatial pose")
-                    
-                    // SUCCESS! Get geospatial pose
-                    val geospatialPose = try {
-                        earth.cameraGeospatialPose
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Failed to get camera geospatial pose", e)
-                        runOnUiThread {
-                            statusText.text = "❌ Location pose error: ${e.localizedMessage}"
-                            sessionStateText.text = "❌ Pose Error"
-                        }
-                        return
-                    }
-                    
-                    if (geospatialPose == null) {
-                        Log.e(TAG, "❌ Geospatial pose is null")
-                        runOnUiThread {
-                            statusText.text = "❌ Geospatial pose is null"
-                            sessionStateText.text = "❌ Null Pose"
-                        }
-                        return
-                    }
-                    
-                    val latitude = geospatialPose.latitude
-                    val longitude = geospatialPose.longitude
-                    val altitude = geospatialPose.altitude
-                    val horizontalAccuracy = geospatialPose.horizontalAccuracy
-                    val heading = geospatialPose.heading
-                    
-                    Log.v(TAG, "📍 Raw ARCore pose: lat=$latitude, lng=$longitude, acc=$horizontalAccuracy")
-                    
-                    // Check if coordinates are valid (not zero/null location)
-                    val hasValidCoordinates = latitude != 0.0 && longitude != 0.0
-                    val hasReasonableAccuracy = horizontalAccuracy > 0.0f && horizontalAccuracy < 1000.0f
-                    val isAccurate = horizontalAccuracy <= 10.0f && hasValidCoordinates && hasReasonableAccuracy
-                    
-                    // Check session runtime
-                    val sessionRuntime = (System.currentTimeMillis() - sessionStartTime) / 1000
-                    
-                    Log.d(TAG, "📍 Location validation - Coords valid: $hasValidCoordinates, Accuracy reasonable: $hasReasonableAccuracy, Accurate: $isAccurate, Session runtime: ${sessionRuntime}s")
-                    
-                    runOnUiThread {
-                        locationText.text = "📍 Lat: ${"%.6f".format(latitude)} (ARCore)\n" +
-                                          "🌐 Lng: ${"%.6f".format(longitude)} (ARCore)\n" +
-                                          "⛰️ Alt: ${"%.1f".format(altitude)}m\n" +
-                                          "🧭 Heading: ${"%.1f".format(heading)}°"
-                        
-                        accuracyText.text = when {
-                            !hasValidCoordinates -> "❌ Invalid coordinates (0,0) - ARCore"
-                            !hasReasonableAccuracy -> "❌ Invalid accuracy (${horizontalAccuracy}m) - ARCore"
-                            horizontalAccuracy <= 5.0f -> "🎯 High accuracy (${horizontalAccuracy}m) - ARCore"
-                            horizontalAccuracy <= 10.0f -> "✅ Good accuracy (${horizontalAccuracy}m) - ARCore"
-                            horizontalAccuracy <= 50.0f -> "⚠️ Fair accuracy (${horizontalAccuracy}m) - ARCore"
-                            else -> "🔴 Poor accuracy (${horizontalAccuracy}m) - ARCore"
-                        }
-                        
-                        statusText.text = when {
-                            !hasValidCoordinates -> {
-                                if (lastKnownLocation != null) {
-                                    if (sessionRuntime < 30) {
-                                        "🔄 ARCore Geospatial initializing... (${sessionRuntime}s, Android GPS: ${lastKnownLocation!!.accuracy}m)"
-                                    } else {
-                                        "⏰ ARCore taking longer than expected (${sessionRuntime}s) - check internet & GPS"
-                                    }
-                                } else {
-                                    "❌ Waiting for GPS coordinates... (currently 0,0)"
-                                }
-                            }
-                            !hasReasonableAccuracy -> "❌ Waiting for GPS accuracy data..."
-                            isAccurate -> "✅ LOCATION VALIDATED - Ready for verification!"
-                            horizontalAccuracy <= 50.0f -> "🔄 Improving location accuracy... (${horizontalAccuracy}m)"
-                            else -> "🔄 Acquiring GPS signal... (${horizontalAccuracy}m)"
-                        }
-                    }
-                    
-                    Log.d(TAG, "📍 Location: $latitude, $longitude (±${horizontalAccuracy}m) - Valid: $hasValidCoordinates")
-                    
-                    // If we have invalid coordinates, provide helpful tips
-                    if (!hasValidCoordinates) {
-                        Log.w(TAG, "⚠️ GPS coordinates are zero - device may need clear sky view or more time")
-                    }
-                }
-                
-                com.google.ar.core.Earth.EarthState.ERROR_INTERNAL -> {
-                    Log.e(TAG, "Earth state error: Internal error")
-                    runOnUiThread { statusText.text = "❌ Internal geospatial error" }
-                }
-                
-                com.google.ar.core.Earth.EarthState.ERROR_NOT_AUTHORIZED -> {
-                    Log.e(TAG, "Earth state error: Not authorized")
-                    runOnUiThread { statusText.text = "❌ Geospatial service not authorized" }
-                }
-                
-                com.google.ar.core.Earth.EarthState.ERROR_RESOURCE_EXHAUSTED -> {
-                    Log.e(TAG, "Earth state error: Resource exhausted")
-                    runOnUiThread { statusText.text = "❌ Geospatial service quota exceeded" }
-                }
-                
-                else -> {
-                    Log.d(TAG, "🔄 Earth state: $earthState (initializing...)")
-                    runOnUiThread { 
-                        statusText.text = "🔄 Initializing geospatial service... ($earthState)"
-                        sessionStateText.text = "🔄 Geospatial: $earthState"
-                    }
-                }
-            }
-            
+            locationManager?.removeUpdates(locationListener)
+            locationUpdatesStarted = false
+            Log.d(TAG, "🛑 Location updates stopped")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error updating location data", e)
-            runOnUiThread { 
-                statusText.text = "❌ Error getting location: ${e.localizedMessage}"
-                sessionStateText.text = "❌ Error: ${e.javaClass.simpleName}"
-            }
+            Log.e(TAG, "❌ Error stopping location updates", e)
         }
+    }
+    
+    private fun updateLocationDisplay(location: Location) {
+        runOnUiThread {
+            statusText.text = "🛰️ AR GPS Active - Location Acquired"
+            latitudeText.text = "📍 Lat: %.6f".format(location.latitude)
+            longitudeText.text = "📍 Lng: %.6f".format(location.longitude)
+            accuracyText.text = "🎯 Accuracy: %.1fm".format(location.accuracy)
+            altitudeText.text = if (location.hasAltitude()) {
+                "⛰️ Alt: %.1fm".format(location.altitude)
+            } else {
+                "⛰️ Alt: N/A"
+            }
+            
+            Log.d(TAG, "✅ Location display updated - Lat: ${location.latitude}, Lng: ${location.longitude}, Acc: ${location.accuracy}m")
+        }
+    }
+    
+    private fun initializeCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        
+        cameraProviderFuture.addListener({
+            try {
+                val cameraProvider = cameraProviderFuture.get()
+                
+                // Preview use case for AR appearance
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                
+                // Select back camera for AR experience
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                
+                // Unbind previous use cases and bind new ones
+                cameraProvider.unbindAll()
+                camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview)
+                
+                Log.d(TAG, "📸 Camera initialized for AR simulation")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to initialize camera", e)
+                statusText.text = "⚠️ Camera initialization failed"
+            }
+        }, ContextCompat.getMainExecutor(this))
     }
 }

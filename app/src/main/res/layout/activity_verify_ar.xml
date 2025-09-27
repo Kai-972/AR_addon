@@ -4,12 +4,11 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- Minimal GLSurfaceView for ARCore context - make it tiny and invisible -->
-    <android.opengl.GLSurfaceView
-        android:id="@+id/ar_surface_view"
-        android:layout_width="1dp"
-        android:layout_height="1dp"
-        android:visibility="invisible" />
+    <!-- Camera preview for AR simulation -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <!-- Core ARCore Geospatial Info Panel -->
     <LinearLayout
@@ -44,57 +43,53 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:text="Session State:"
+        android:text="GPS Location:"
         android:textColor="#AAAAAA"
         android:textSize="12sp" />
 
     <TextView
-        android:id="@+id/session_state_text"
+        android:id="@+id/latitude_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#333333"
         android:padding="8dp"
-        android:text="Not initialized"
-        android:textColor="#FFFF00"
-        android:textSize="12sp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="8dp"
-        android:text="Location:"
-        android:textColor="#AAAAAA"
-        android:textSize="12sp" />
-
-    <TextView
-        android:id="@+id/location_text"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#333333"
-        android:padding="8dp"
-        android:text="Waiting for location..."
+        android:text="📍 Lat: Acquiring..."
         android:textColor="#00FF00"
         android:textSize="11sp"
         android:fontFamily="monospace" />
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/longitude_text"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="4dp"
-        android:text="Accuracy:"
-        android:textColor="#AAAAAA"
-        android:textSize="12sp" />
+        android:layout_marginTop="4dp"
+        android:background="#333333"
+        android:padding="8dp"
+        android:text="📍 Lng: Acquiring..."
+        android:textColor="#00FF00"
+        android:textSize="11sp"
+        android:fontFamily="monospace" />
 
     <TextView
         android:id="@+id/accuracy_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
         android:background="#333333"
         android:padding="8dp"
-        android:text="No accuracy data"
+        android:text="🎯 Accuracy: Acquiring..."
         android:textColor="#FFAA00"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/altitude_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="#333333"
+        android:padding="8dp"
+        android:text="⛰️ Alt: Acquiring..."
+        android:textColor="#CCCCCC"
         android:textSize="11sp" />
 
     </LinearLayout>

@@ -47,10 +47,13 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.activity:activity-ktx:1.8.1")
     
-    // ARCore
-    implementation("com.google.ar:core:1.42.0")
+    // CameraX for AR simulation
+    implementation("androidx.camera:camera-core:1.3.0")
+    implementation("androidx.camera:camera-camera2:1.3.0")
+    implementation("androidx.camera:camera-lifecycle:1.3.0")
+    implementation("androidx.camera:camera-view:1.3.0")
     
-    // Location Services
+    // Location Services (Android native - no ARCore)
     implementation("com.google.android.gms:play-services-location:21.0.1")
     
     // Networking
