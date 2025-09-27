@@ -84,8 +84,8 @@ class GeospatialManager {
                         longitude = cameraGeospatialPose.longitude,
                         altitude = cameraGeospatialPose.altitude,
                         heading = cameraGeospatialPose.heading,
-                        horizontalAccuracyMeters = cameraGeospatialPose.horizontalAccuracy,
-                        poseConfidence = cameraGeospatialPose.orientationYawAccuracy,
+                        horizontalAccuracyMeters = cameraGeospatialPose.horizontalAccuracy.toFloat(),
+                        poseConfidence = cameraGeospatialPose.orientationYawAccuracy.toFloat(),
                         isAccurate = cameraGeospatialPose.horizontalAccuracy <= GEO_ACCURACY_METERS.toFloat() &&
                                    cameraGeospatialPose.orientationYawAccuracy >= MIN_POSE_CONFIDENCE.toFloat()
                     )
