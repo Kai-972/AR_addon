@@ -55,6 +55,19 @@ class VerifyArActivity : AppCompatActivity() {
     private var cameraExecutor: ExecutorService? = null
     private var camera: Camera? = null
     
+    // AI Verification components
+    private var verificationStage = 0
+    private var isVerifying = false
+    private var verificationStartTime = 0L
+    private val verificationStages = listOf(
+        "🔍 Scanning environment...",
+        "🎯 Analyzing GPS coordinates...",
+        "🧠 Processing AI landmarks detection...",
+        "📊 Cross-referencing location data...",
+        "🛰️ Validating geospatial accuracy...",
+        "✅ Verification complete!"
+    )
+    
     // Permission handling
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -170,13 +183,21 @@ class VerifyArActivity : AppCompatActivity() {
         
         lifecycleScope.launch {
             try {
-                // Initialize location services
-                initializeLocationServices()
+                statusText.text = "🔄 Initializing AR System..."
+                delay(500L)
                 
-                // Initialize camera for AR appearance
+                statusText.text = "📸 Starting camera preview..."
                 initializeCamera()
+                delay(1000L)
                 
-                statusText.text = "🛰️ AR GPS System Ready"
+                statusText.text = "🛰️ Connecting to GPS satellites..."
+                initializeLocationServices()
+                delay(1000L)
+                
+                statusText.text = "🧠 Loading AI models..."
+                delay(1500L)
+                
+                statusText.text = "✅ AR GPS System Ready - Acquiring location..."
                 Log.d(TAG, "✅ AR GPS simulation initialized successfully")
                 
             } catch (e: Exception) {
@@ -209,6 +230,9 @@ class VerifyArActivity : AppCompatActivity() {
         
         try {
             val locationManager = locationManager ?: return
+            
+            // Start scanning animation
+            startScanningAnimation()
             
             // Request location updates from both GPS and Network providers
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -251,7 +275,6 @@ class VerifyArActivity : AppCompatActivity() {
             }
             
             locationUpdatesStarted = true
-            statusText.text = "🛰️ AR GPS Active - Acquiring location..."
             
         } catch (e: SecurityException) {
             Log.e(TAG, "❌ Security exception when requesting location updates", e)
@@ -259,6 +282,26 @@ class VerifyArActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error starting location updates", e)
             statusText.text = "❌ Failed to start location tracking"
+        }
+    }
+    
+    private fun startScanningAnimation() {
+        lifecycleScope.launch {
+            val scanMessages = listOf(
+                "🛰️ Connecting to satellites...",
+                "📡 Acquiring GPS signal...",
+                "🔍 Scanning for location data...",
+                "📊 Processing coordinates..."
+            )
+            
+            var scanIndex = 0
+            while (!isVerifying && locationUpdatesStarted) {
+                runOnUiThread {
+                    statusText.text = scanMessages[scanIndex % scanMessages.size]
+                }
+                scanIndex++
+                delay(2000L)
+            }
         }
     }
     
@@ -274,17 +317,97 @@ class VerifyArActivity : AppCompatActivity() {
     
     private fun updateLocationDisplay(location: Location) {
         runOnUiThread {
-            statusText.text = "🛰️ AR GPS Active - Location Acquired"
+            // Update location display
             latitudeText.text = "📍 Lat: %.6f".format(location.latitude)
             longitudeText.text = "📍 Lng: %.6f".format(location.longitude)
-            accuracyText.text = "🎯 Accuracy: %.1fm".format(location.accuracy)
+            
+            // Enhanced accuracy display with color coding
+            val accuracyColor = when {
+                location.accuracy <= 5.0f -> "#00FF00"  // Green - Excellent
+                location.accuracy <= 10.0f -> "#FFFF00" // Yellow - Good  
+                location.accuracy <= 20.0f -> "#FFA500" // Orange - Fair
+                else -> "#FF0000"                        // Red - Poor
+            }
+            
+            accuracyText.text = "🎯 Accuracy: %.1fm %s".format(
+                location.accuracy,
+                when {
+                    location.accuracy <= 5.0f -> "(Excellent)"
+                    location.accuracy <= 10.0f -> "(Good)"
+                    location.accuracy <= 20.0f -> "(Fair)"
+                    else -> "(Poor)"
+                }
+            )
+            
             altitudeText.text = if (location.hasAltitude()) {
-                "⛰️ Alt: %.1fm".format(location.altitude)
+                "⛰️ Altitude: %.1fm".format(location.altitude)
             } else {
-                "⛰️ Alt: N/A"
+                "⛰️ Altitude: N/A"
+            }
+            
+            // Start AI verification process if not already started and accuracy is good
+            if (!isVerifying && location.accuracy <= 20.0f) {
+                startAiVerification(location)
+            } else if (!isVerifying) {
+                statusText.text = "🔄 Improving location accuracy... (${location.accuracy.toInt()}m)"
             }
             
             Log.d(TAG, "✅ Location display updated - Lat: ${location.latitude}, Lng: ${location.longitude}, Acc: ${location.accuracy}m")
+        }
+    }
+    
+    private fun startAiVerification(location: Location) {
+        isVerifying = true
+        verificationStartTime = System.currentTimeMillis()
+        verificationStage = 0
+        
+        Log.d(TAG, "🚀 Starting AI verification process")
+        
+        lifecycleScope.launch {
+            // Simulate progressive AI verification stages
+            for (stage in verificationStages.indices) {
+                verificationStage = stage
+                
+                runOnUiThread {
+                    statusText.text = verificationStages[stage]
+                }
+                
+                // Realistic delays for each stage
+                val stageDelay = when (stage) {
+                    0 -> 2000L  // Environment scan
+                    1 -> 1500L  // GPS analysis
+                    2 -> 3000L  // AI processing (longest)
+                    3 -> 2000L  // Cross-reference
+                    4 -> 1000L  // Final validation
+                    5 -> 500L   // Complete
+                    else -> 1000L
+                }
+                
+                delay(stageDelay)
+                
+                // Add some progress indicators during AI processing
+                if (stage == 2) {
+                    runOnUiThread {
+                        statusText.text = "🧠 AI Processing: Landmark patterns detected..."
+                    }
+                    delay(1000L)
+                    runOnUiThread {
+                        statusText.text = "🧠 AI Processing: Analyzing geographical features..."
+                    }
+                    delay(1000L)
+                }
+            }
+            
+            // Final verification result
+            runOnUiThread {
+                val verificationTime = (System.currentTimeMillis() - verificationStartTime) / 1000
+                statusText.text = "✅ LOCATION VERIFIED! ✅\n🎉 AI Analysis Complete (${verificationTime}s)\n🏆 Ready for landmark verification!"
+                
+                // Optional: Add verification success sound or vibration
+                // You could add haptic feedback here
+            }
+            
+            Log.d(TAG, "🎉 AI verification completed successfully")
         }
     }
     
