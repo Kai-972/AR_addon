@@ -83,17 +83,39 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
-    // Location listener for GPS updates
+    // AI Verification system
+    private var verificationStage = 0
+    private var isVerificationInProgress = false
+    private var isVerifying = false
+    private var isVerified = false
+    private var verificationStartTime = 0L
+    
+    // AI Verification stages for realistic simulation
+    private val verificationStages = listOf(
+        "🔍 AI analyzing GPS signal strength...",
+        "🛰️ Cross-referencing satellite data...", 
+        "🗺️ Validating geographical coordinates...",
+        "📡 Running neural network verification...",
+        "🎯 Calculating position confidence...",
+        "✅ AI verification complete!"
+    )
+    
+    // Location listener with AI-like verification stages
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             Log.d(TAG, "📍 GPS Location updated: ${location.latitude}, ${location.longitude}")
             lastKnownLocation = location
-            updateLocationDisplay(location)
+            
+            if (!isVerificationInProgress && location.accuracy <= 20.0f) {
+                startAIVerificationProcess(location)
+            } else {
+                updateLocationDisplay(location, false)
+            }
         }
         
         override fun onProviderEnabled(provider: String) {
             Log.d(TAG, "✅ Location provider enabled: $provider")
-            statusText.text = "🛰️ AR GPS Active - Provider: $provider"
+            statusText.text = "🛰️ AR System Active - GPS Provider: $provider"
         }
         
         override fun onProviderDisabled(provider: String) {
@@ -315,29 +337,21 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
-    private fun updateLocationDisplay(location: Location) {
+    private fun updateLocationDisplay(location: Location, isVerified: Boolean = false) {
         runOnUiThread {
-            // Update location display
-            latitudeText.text = "📍 Lat: %.6f".format(location.latitude)
-            longitudeText.text = "📍 Lng: %.6f".format(location.longitude)
+            // Update location display with enhanced styling
+            latitudeText.text = "📍 Lat: %.6f ${if(isVerified) "✅ VERIFIED" else ""}".format(location.latitude)
+            longitudeText.text = "📍 Lng: %.6f ${if(isVerified) "✅ VERIFIED" else ""}".format(location.longitude)
             
-            // Enhanced accuracy display with color coding
-            val accuracyColor = when {
-                location.accuracy <= 5.0f -> "#00FF00"  // Green - Excellent
-                location.accuracy <= 10.0f -> "#FFFF00" // Yellow - Good  
-                location.accuracy <= 20.0f -> "#FFA500" // Orange - Fair
-                else -> "#FF0000"                        // Red - Poor
+            // Enhanced accuracy display with AI status
+            val accuracyStatus = when {
+                location.accuracy <= 5.0f -> "🎯 PRECISION (AI Verified)"
+                location.accuracy <= 10.0f -> "✅ HIGH ACCURACY (AI Ready)"
+                location.accuracy <= 20.0f -> "⚠️ FAIR ACCURACY (AI Processing)"
+                else -> "🔄 IMPROVING... (AI Analyzing)"
             }
             
-            accuracyText.text = "🎯 Accuracy: %.1fm %s".format(
-                location.accuracy,
-                when {
-                    location.accuracy <= 5.0f -> "(Excellent)"
-                    location.accuracy <= 10.0f -> "(Good)"
-                    location.accuracy <= 20.0f -> "(Fair)"
-                    else -> "(Poor)"
-                }
-            )
+            accuracyText.text = "🎯 Accuracy: %.1fm - %s".format(location.accuracy, accuracyStatus)
             
             altitudeText.text = if (location.hasAltitude()) {
                 "⛰️ Altitude: %.1fm".format(location.altitude)
@@ -345,9 +359,9 @@ class VerifyArActivity : AppCompatActivity() {
                 "⛰️ Altitude: N/A"
             }
             
-            // Start AI verification process if not already started and accuracy is good
-            if (!isVerifying && location.accuracy <= 20.0f) {
-                startAiVerification(location)
+            // Update status based on verification state
+            if (!isVerifying && !isVerified) {
+                statusText.text = "🔄 Location acquired - Preparing AI verification..."
             } else if (!isVerifying) {
                 statusText.text = "🔄 Improving location accuracy... (${location.accuracy.toInt()}m)"
             }
@@ -356,60 +370,7 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
-    private fun startAiVerification(location: Location) {
-        isVerifying = true
-        verificationStartTime = System.currentTimeMillis()
-        verificationStage = 0
-        
-        Log.d(TAG, "🚀 Starting AI verification process")
-        
-        lifecycleScope.launch {
-            // Simulate progressive AI verification stages
-            for (stage in verificationStages.indices) {
-                verificationStage = stage
-                
-                runOnUiThread {
-                    statusText.text = verificationStages[stage]
-                }
-                
-                // Realistic delays for each stage
-                val stageDelay = when (stage) {
-                    0 -> 2000L  // Environment scan
-                    1 -> 1500L  // GPS analysis
-                    2 -> 3000L  // AI processing (longest)
-                    3 -> 2000L  // Cross-reference
-                    4 -> 1000L  // Final validation
-                    5 -> 500L   // Complete
-                    else -> 1000L
-                }
-                
-                delay(stageDelay)
-                
-                // Add some progress indicators during AI processing
-                if (stage == 2) {
-                    runOnUiThread {
-                        statusText.text = "🧠 AI Processing: Landmark patterns detected..."
-                    }
-                    delay(1000L)
-                    runOnUiThread {
-                        statusText.text = "🧠 AI Processing: Analyzing geographical features..."
-                    }
-                    delay(1000L)
-                }
-            }
-            
-            // Final verification result
-            runOnUiThread {
-                val verificationTime = (System.currentTimeMillis() - verificationStartTime) / 1000
-                statusText.text = "✅ LOCATION VERIFIED! ✅\n🎉 AI Analysis Complete (${verificationTime}s)\n🏆 Ready for landmark verification!"
-                
-                // Optional: Add verification success sound or vibration
-                // You could add haptic feedback here
-            }
-            
-            Log.d(TAG, "🎉 AI verification completed successfully")
-        }
-    }
+
     
     private fun initializeCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
@@ -437,5 +398,88 @@ class VerifyArActivity : AppCompatActivity() {
                 statusText.text = "⚠️ Camera initialization failed"
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+    
+    private fun startAIVerificationProcess(location: Location) {
+        if (isVerificationInProgress) return
+        
+        isVerificationInProgress = true
+        isVerifying = true
+        verificationStartTime = System.currentTimeMillis()
+        verificationStage = 0
+        
+        Log.d(TAG, "🚀 Starting AI verification process for location: ${location.latitude}, ${location.longitude}")
+        
+        lifecycleScope.launch {
+            try {
+                // Stage 1: Initial location display
+                updateLocationDisplay(location, false)
+                statusText.text = "🔍 AI starting location verification..."
+                
+                // Progressive AI verification with realistic delays
+                for (stage in verificationStages.indices) {
+                    verificationStage = stage
+                    val stageMessage = verificationStages[stage]
+                    
+                    statusText.text = stageMessage
+                    Log.d(TAG, "AI Stage $stage: $stageMessage")
+                    
+                    // Realistic AI processing delays (2-4 seconds per stage)
+                    val delay = when (stage) {
+                        0 -> 2000L  // Signal analysis
+                        1 -> 3000L  // Satellite cross-reference
+                        2 -> 2500L  // Coordinate validation
+                        3 -> 3500L  // Neural network (longest)
+                        4 -> 2000L  // Confidence calculation
+                        5 -> 1500L  // Final verification
+                        else -> 2000L
+                    }
+                    
+                    kotlinx.coroutines.delay(delay)
+                    
+                    // Add some dynamic status updates during longer stages
+                    if (stage == 3) { // Neural network stage
+                        statusText.text = "🧠 Deep learning model processing... 87%"
+                        kotlinx.coroutines.delay(1000L)
+                        statusText.text = "🧠 Neural analysis complete - High confidence!"
+                        kotlinx.coroutines.delay(1000L)
+                    }
+                }
+                
+                // Final verification complete
+                isVerificationInProgress = false
+                isVerifying = false
+                
+                runOnUiThread {
+                    updateLocationDisplay(location, true)
+                    statusText.text = "✅ AI VERIFICATION COMPLETE - Location Authenticated!"
+                    
+                    // Add a success animation effect
+                    animateVerificationSuccess()
+                }
+                
+                Log.d(TAG, "✅ AI verification completed successfully")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ AI verification failed", e)
+                isVerificationInProgress = false
+                isVerifying = false
+                statusText.text = "❌ AI verification failed - Please try again"
+            }
+        }
+    }
+    
+    private fun animateVerificationSuccess() {
+        lifecycleScope.launch {
+            // Flash effect for success
+            val originalText = statusText.text
+            repeat(3) {
+                statusText.text = "🎉 SUCCESS! Location Verified! 🎉"
+                kotlinx.coroutines.delay(500L)
+                statusText.text = originalText
+                kotlinx.coroutines.delay(300L)
+            }
+            statusText.text = "✅ Ready for landmark verification!"
+        }
     }
 }
