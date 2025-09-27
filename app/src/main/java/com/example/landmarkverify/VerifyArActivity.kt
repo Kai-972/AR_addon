@@ -208,7 +208,7 @@ class VerifyArActivity : AppCompatActivity() {
             val config = Config(session).apply {
                 augmentedImageDatabase = database
                 // Keep existing geospatial configuration
-                if (isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                if (session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                     geospatialMode = Config.GeospatialMode.ENABLED
                 }
                 planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
