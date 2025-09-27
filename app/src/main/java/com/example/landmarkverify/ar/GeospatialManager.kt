@@ -42,15 +42,20 @@ class GeospatialManager {
     fun startGeospatialTracking(session: Session?) {
         session?.let {
             Log.d(TAG, "Starting geospatial tracking")
+            Log.d(TAG, "Session geospatial mode: ${it.config.geospatialMode}")
+            
             val earth = it.earth
             if (earth != null) {
                 val earthStateValue = try {
-                    earth.earthState.ordinal
+                    val state = earth.earthState
+                    Log.d(TAG, "Raw Earth state: $state")
+                    state.ordinal
                 } catch (e: Exception) {
+                    Log.e(TAG, "Error getting earth state", e)
                     -1
                 }
                 _earthState.value = earthStateValue
-                Log.d(TAG, "Earth state: $earthStateValue")
+                Log.d(TAG, "Earth state ordinal: $earthStateValue")
             } else {
                 Log.w(TAG, "Earth is null - geospatial not supported")
                 _earthState.value = 0 // disabled
@@ -63,16 +68,21 @@ class GeospatialManager {
             val earth = session.earth
             
             if (earth == null) {
-                Log.v(TAG, "Earth is null")
+                Log.w(TAG, "Earth is null in updateGeospatialPose")
                 return
             }
             
             val currentEarthState = try {
-                earth.earthState.ordinal
+                val state = earth.earthState
+                Log.v(TAG, "Current Earth state: $state")
+                state.ordinal
             } catch (e: Exception) {
+                Log.e(TAG, "Error getting earth state in update", e)
                 -1
             }
             _earthState.value = currentEarthState
+            
+            Log.d(TAG, "Earth state in update: $currentEarthState")
             
             when (currentEarthState) {
                 1 -> { // ENABLED state (typically ordinal 1)

@@ -41,12 +41,13 @@ class ArSessionManager {
                 val sessionRef = this
                 val config = Config(this).apply {
                     // Enable Geospatial if supported
+                    Log.d(TAG, "Checking geospatial mode support...")
                     if (sessionRef.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                         geospatialMode = Config.GeospatialMode.ENABLED
                         isGeospatialSupported = true
-                        Log.d(TAG, "Geospatial mode enabled")
+                        Log.i(TAG, "✅ Geospatial mode ENABLED successfully")
                     } else {
-                        Log.w(TAG, "Geospatial mode not supported on this device")
+                        Log.w(TAG, "❌ Geospatial mode NOT SUPPORTED on this device")
                         isGeospatialSupported = false
                     }
                     
