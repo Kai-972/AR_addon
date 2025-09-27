@@ -11,7 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.landmarkverify.ar.ArSessionManager
+import com.example.landmarkverify.ar.AugmentedImageLoader
 import com.google.ar.core.ArCoreApk
+import com.google.ar.core.AugmentedImage
+import com.google.ar.core.Config
 import kotlinx.coroutines.launch
 
 class VerifyArActivity : AppCompatActivity() {
@@ -27,6 +30,7 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var sessionStateText: TextView
     private lateinit var arSessionManager: ArSessionManager
+    private lateinit var imageLoader: AugmentedImageLoader
     private var userRequestedInstall = false
     
     private val permissionLauncher = registerForActivityResult(
@@ -50,12 +54,20 @@ class VerifyArActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         sessionStateText = findViewById(R.id.session_state_text)
         arSessionManager = ArSessionManager()
+        imageLoader = AugmentedImageLoader()
         
         // Observe session state changes
         lifecycleScope.launch {
             arSessionManager.sessionState.collect { state ->
                 sessionStateText.text = state.name.replace("_", " ").lowercase().capitalize()
                 Log.d(TAG, "Session state changed to: $state")
+            }
+        }
+        
+        // Observe frame updates for image detection
+        lifecycleScope.launch {
+            arSessionManager.frameUpdates.collect { frame ->
+                frame?.let { processFrameForImageDetection(it) }
             }
         }
         
@@ -106,7 +118,8 @@ class VerifyArActivity : AppCompatActivity() {
                         Log.d(TAG, "ARCore is installed and supported")
                         statusText.text = "ARCore available, initializing session..."
                         arSessionManager.initializeSession(this@VerifyArActivity)
-                        statusText.text = "AR Session initialized successfully"
+                        setupAugmentedImages()
+                        statusText.text = "AR Session initialized with image database"
                     }
                     ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
                     ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
@@ -139,13 +152,111 @@ class VerifyArActivity : AppCompatActivity() {
                     Log.d(TAG, "ARCore installed, initializing session")
                     lifecycleScope.launch {
                         arSessionManager.initializeSession(this@VerifyArActivity)
-                        statusText.text = "AR Session initialized successfully"
+                        setupAugmentedImages()
+                        statusText.text = "AR Session initialized with image database"
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting ARCore installation", e)
             statusText.text = "Error installing ARCore: ${e.message}"
+        }
+    }
+    
+    private suspend fun setupAugmentedImages() {
+        try {
+            val session = arSessionManager.getSession()
+            if (session == null) {
+                Log.w(TAG, "Cannot setup augmented images - session is null")
+                return
+            }
+            
+            Log.d(TAG, "Setting up augmented image database")
+            statusText.text = "Loading image database..."
+            
+            // Check if database exists
+            if (!imageLoader.isDatabaseAvailable(this)) {
+                Log.w(TAG, "Augmented image database not found, using empty database")
+                statusText.text = "No image database found - see assets/README_augmented_image_db.txt"
+                val emptyDatabase = imageLoader.createEmptyDatabase(session)
+                attachDatabaseToSession(session, emptyDatabase)
+                return
+            }
+            
+            // Load database from assets
+            val database = imageLoader.loadDatabase(this, session)
+            if (database != null) {
+                attachDatabaseToSession(session, database)
+                Log.d(TAG, "Augmented image database loaded successfully with ${database.numImages} images")
+                statusText.text = "Image database loaded: ${database.numImages} images"
+            } else {
+                Log.e(TAG, "Failed to load augmented image database")
+                statusText.text = "Failed to load image database"
+                // Use empty database as fallback
+                val emptyDatabase = imageLoader.createEmptyDatabase(session)
+                attachDatabaseToSession(session, emptyDatabase)
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up augmented images", e)
+            statusText.text = "Error loading image database: ${e.message}"
+        }
+    }
+    
+    private fun attachDatabaseToSession(session: com.google.ar.core.Session, database: com.google.ar.core.AugmentedImageDatabase) {
+        try {
+            val config = Config(session).apply {
+                augmentedImageDatabase = database
+                // Keep existing geospatial configuration
+                if (isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                    geospatialMode = Config.GeospatialMode.ENABLED
+                }
+                planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                focusMode = Config.FocusMode.AUTO
+            }
+            
+            session.configure(config)
+            Log.d(TAG, "Session reconfigured with augmented image database")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach database to session", e)
+        }
+    }
+    
+    private fun processFrameForImageDetection(frame: com.google.ar.core.Frame) {
+        try {
+            val updatedAugmentedImages = frame.getUpdatedTrackables(AugmentedImage::class.java)
+            
+            for (augmentedImage in updatedAugmentedImages) {
+                when (augmentedImage.trackingState) {
+                    com.google.ar.core.TrackingState.PAUSED -> {
+                        // Image was detected but tracking is paused
+                        Log.d(TAG, "Image detection paused: ${augmentedImage.name}")
+                    }
+                    com.google.ar.core.TrackingState.TRACKING -> {
+                        // Image is being tracked successfully
+                        Log.i(TAG, "Image detected and tracking: ${augmentedImage.name}")
+                        Log.d(TAG, "Image pose: ${augmentedImage.centerPose}")
+                        Log.d(TAG, "Image extent: ${augmentedImage.extentX} x ${augmentedImage.extentZ}")
+                        
+                        // Update UI with detection info
+                        runOnUiThread {
+                            statusText.text = "✓ Detected: ${augmentedImage.name} (tracking)"
+                        }
+                    }
+                    com.google.ar.core.TrackingState.STOPPED -> {
+                        // Image tracking has stopped
+                        Log.d(TAG, "Image tracking stopped: ${augmentedImage.name}")
+                        runOnUiThread {
+                            statusText.text = "Image tracking lost: ${augmentedImage.name}"
+                        }
+                    }
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing frame for image detection", e)
         }
     }
 }
