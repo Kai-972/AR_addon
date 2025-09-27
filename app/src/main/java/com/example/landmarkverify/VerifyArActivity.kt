@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
+import android.location.LocationManager
+import android.content.Context
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -136,6 +138,19 @@ class VerifyArActivity : AppCompatActivity() {
             try {
                 statusText.text = "Checking ARCore availability..."
                 
+                // First check if location services are enabled
+                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                
+                if (!isGpsEnabled && !isNetworkEnabled) {
+                    Log.e(TAG, "❌ Location services are disabled")
+                    statusText.text = "❌ Please enable location services in device settings"
+                    return@launch
+                }
+                
+                Log.d(TAG, "✅ Location services enabled - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
+                
                 // Check ARCore availability
                 when (ArCoreApk.getInstance().checkAvailability(this@VerifyArActivity)) {
                     ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
@@ -226,9 +241,9 @@ class VerifyArActivity : AppCompatActivity() {
                 statusText.text = "✅ ARCore Geospatial ready - Starting location tracking..."
             }
             
-            // Start location tracking with a small delay to ensure session is fully ready
+            // Start location tracking with longer delay for geospatial initialization
             lifecycleScope.launch {
-                delay(1000) // Give ARCore time to initialize
+                delay(2000) // Give ARCore more time to initialize geospatial
                 startLocationTracking()
             }
             
@@ -286,12 +301,28 @@ class VerifyArActivity : AppCompatActivity() {
         try {
             // Update ARCore frame to get latest geospatial data
             val frame = session.update()
+            Log.v(TAG, "📱 ARCore frame updated successfully")
+            
+            // Check camera tracking state
+            val camera = frame.camera
+            val trackingState = camera.trackingState
+            Log.v(TAG, "📹 Camera tracking state: $trackingState")
+            
+            if (trackingState != com.google.ar.core.TrackingState.TRACKING) {
+                Log.w(TAG, "⚠️ Camera not tracking properly: $trackingState")
+                runOnUiThread {
+                    statusText.text = "🔄 Camera initializing... ($trackingState)"
+                    sessionStateText.text = "📹 Camera: $trackingState"
+                }
+                return
+            }
+            
             val earth = session.earth
             
             if (earth == null) {
-                Log.w(TAG, "❌ Earth is null - geospatial not available yet")
+                Log.w(TAG, "❌ Earth is null - geospatial not available yet. Check internet connection.")
                 runOnUiThread {
-                    statusText.text = "🔄 Waiting for geospatial service..."
+                    statusText.text = "🔄 Waiting for geospatial service... (check internet)"
                 }
                 return
             }
@@ -300,8 +331,7 @@ class VerifyArActivity : AppCompatActivity() {
             
             // Get current Earth state
             val earthState = earth.earthState
-            Log.v(TAG, "Earth state: $earthState")
-            
+            Log.i(TAG, "🌍 Earth state: $earthState")
             when (earthState) {
                 com.google.ar.core.Earth.EarthState.ENABLED -> {
                     // SUCCESS! Get geospatial pose
@@ -353,14 +383,20 @@ class VerifyArActivity : AppCompatActivity() {
                 }
                 
                 else -> {
-                    Log.d(TAG, "Earth state: $earthState (initializing...)")
-                    runOnUiThread { statusText.text = "🔄 Initializing geospatial service..." }
+                    Log.d(TAG, "🔄 Earth state: $earthState (initializing...)")
+                    runOnUiThread { 
+                        statusText.text = "🔄 Initializing geospatial service... ($earthState)"
+                        sessionStateText.text = "🔄 Geospatial: $earthState"
+                    }
                 }
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating location data", e)
-            runOnUiThread { statusText.text = "Error getting location: ${e.message}" }
+            Log.e(TAG, "❌ Error updating location data", e)
+            runOnUiThread { 
+                statusText.text = "❌ Error getting location: ${e.localizedMessage}"
+                sessionStateText.text = "❌ Error: ${e.javaClass.simpleName}"
+            }
         }
     }
 }
