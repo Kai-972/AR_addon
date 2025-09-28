@@ -2,6 +2,7 @@ package com.example.landmarkverify
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.*
 import android.os.Bundle
@@ -425,14 +426,14 @@ class VerifyArActivity : AppCompatActivity() {
                         else -> 2000L
                     }
                     
-                    kotlinx.coroutines.delay(delay)
+                    delay(delay)
                     
                     // Add some dynamic status updates during longer stages
                     if (stage == 3) { // Neural network stage
                         statusText.text = "🧠 Deep learning model processing... 87%"
-                        kotlinx.coroutines.delay(1000L)
+                        delay(1000L)
                         statusText.text = "🧠 Neural analysis complete - High confidence!"
-                        kotlinx.coroutines.delay(1000L)
+                        delay(1000L)
                     }
                 }
                 
@@ -465,11 +466,22 @@ class VerifyArActivity : AppCompatActivity() {
             val originalText = statusText.text
             repeat(3) {
                 statusText.text = "🎉 SUCCESS! Location Verified! 🎉"
-                kotlinx.coroutines.delay(500L)
+                delay(500L)
                 statusText.text = originalText
-                kotlinx.coroutines.delay(300L)
+                delay(300L)
             }
-            statusText.text = "✅ Ready for landmark verification!"
+            
+            // Show final success message
+            statusText.text = "✅ VERIFICATION COMPLETE - Redirecting..."
+            delay(2000L) // Wait 2 seconds before redirecting
+            
+            // Redirect to Game Selection Activity
+            Log.d(TAG, "🎮 Redirecting to Game Selection Activity")
+            val intent = Intent(this@VerifyArActivity, GameSelectionActivity::class.java)
+            startActivity(intent)
+            
+            // Optionally finish this activity so user can't go back
+            finish()
         }
     }
 }

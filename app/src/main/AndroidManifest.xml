@@ -42,6 +42,12 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.LandmarkVerify" />
+            
+        <activity
+            android:name=".GameSelectionActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.LandmarkVerify" />
     </application>
 
 </manifest>
