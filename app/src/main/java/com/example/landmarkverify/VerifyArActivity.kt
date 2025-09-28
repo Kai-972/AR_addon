@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.*
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +48,7 @@ class VerifyArActivity : AppCompatActivity() {
     private lateinit var longitudeText: TextView
     private lateinit var accuracyText: TextView
     private lateinit var altitudeText: TextView
+    private lateinit var proceedButton: Button
     
     // Location components
     private var locationManager: LocationManager? = null
@@ -74,34 +76,25 @@ class VerifyArActivity : AppCompatActivity() {
         }
     }
     
-    // AI Verification system
-    private var verificationStage = 0
-    private var isVerificationInProgress = false
+    // Verification system
     private var isVerifying = false
     private var isVerified = false
-    private var verificationStartTime = 0L
+    private var locationAcquiredTime = 0L
+    private val VERIFICATION_DELAY_MS = (15..25).random() * 1000L // Random 15-25 seconds
     
-    // AI Verification stages for realistic simulation
-    private val verificationStages = listOf(
-        "🔍 AI analyzing GPS signal strength...",
-        "🛰️ Cross-referencing satellite data...", 
-        "🗺️ Validating geographical coordinates...",
-        "📡 Running neural network verification...",
-        "🎯 Calculating position confidence...",
-        "✅ AI verification complete!"
-    )
-    
-    // Location listener with AI-like verification stages
+    // Location listener with delayed verification
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             Log.d(TAG, "📍 GPS Location updated: ${location.latitude}, ${location.longitude}")
             lastKnownLocation = location
             
-            if (!isVerificationInProgress && location.accuracy <= 20.0f) {
-                startAIVerificationProcess(location)
-            } else {
-                updateLocationDisplay(location, false)
+            // Start verification timer when we first get good location
+            if (locationAcquiredTime == 0L && location.accuracy <= 20.0f) {
+                locationAcquiredTime = System.currentTimeMillis()
+                startVerificationTimer()
             }
+            
+            updateLocationDisplay(location, isVerified)
         }
         
         override fun onProviderEnabled(provider: String) {
@@ -146,8 +139,15 @@ class VerifyArActivity : AppCompatActivity() {
         longitudeText = findViewById(R.id.longitude_text)
         accuracyText = findViewById(R.id.accuracy_text)
         altitudeText = findViewById(R.id.altitude_text)
+        proceedButton = findViewById(R.id.btn_proceed_game)
         
         cameraExecutor = Executors.newSingleThreadExecutor()
+        
+        // Set up button click listener
+        proceedButton.setOnClickListener {
+            startActivity(Intent(this, GameSelectionActivity::class.java))
+            finish()
+        }
         
         statusText.text = "🔄 Initializing AR GPS System..."
         Log.d(TAG, "✅ UI elements initialized")
@@ -391,97 +391,46 @@ class VerifyArActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
     
-    private fun startAIVerificationProcess(location: Location) {
-        if (isVerificationInProgress) return
-        
-        isVerificationInProgress = true
-        isVerifying = true
-        verificationStartTime = System.currentTimeMillis()
-        verificationStage = 0
-        
-        Log.d(TAG, "🚀 Starting AI verification process for location: ${location.latitude}, ${location.longitude}")
+    private fun startVerificationTimer() {
+        Log.d(TAG, "🚀 Starting verification timer - will verify in ${VERIFICATION_DELAY_MS/1000} seconds")
+        statusText.text = "� Location acquired - AI analyzing..."
         
         lifecycleScope.launch {
             try {
-                // Stage 1: Initial location display
-                updateLocationDisplay(location, false)
-                statusText.text = "🔍 AI starting location verification..."
+                // Show progress messages while waiting
+                val progressMessages = listOf(
+                    "🔍 AI analyzing GPS signal strength...",
+                    "🛰️ Cross-referencing satellite data...",
+                    "📡 Running neural network verification...",
+                    "🎯 Calculating position confidence..."
+                )
                 
-                // Progressive AI verification with realistic delays
-                for (stage in verificationStages.indices) {
-                    verificationStage = stage
-                    val stageMessage = verificationStages[stage]
-                    
-                    statusText.text = stageMessage
-                    Log.d(TAG, "AI Stage $stage: $stageMessage")
-                    
-                    // Realistic AI processing delays (2-4 seconds per stage)
-                    val delay = when (stage) {
-                        0 -> 2000L  // Signal analysis
-                        1 -> 3000L  // Satellite cross-reference
-                        2 -> 2500L  // Coordinate validation
-                        3 -> 3500L  // Neural network (longest)
-                        4 -> 2000L  // Confidence calculation
-                        5 -> 1500L  // Final verification
-                        else -> 2000L
-                    }
-                    
-                    delay(delay)
-                    
-                    // Add some dynamic status updates during longer stages
-                    if (stage == 3) { // Neural network stage
-                        statusText.text = "🧠 Deep learning model processing... 87%"
-                        delay(1000L)
-                        statusText.text = "🧠 Neural analysis complete - High confidence!"
-                        delay(1000L)
-                    }
+                val stepDelay = VERIFICATION_DELAY_MS / progressMessages.size
+                
+                for (message in progressMessages) {
+                    statusText.text = message
+                    delay(stepDelay)
                 }
                 
                 // Final verification complete
-                isVerificationInProgress = false
-                isVerifying = false
-                
+                isVerified = true
                 runOnUiThread {
-                    updateLocationDisplay(location, true)
-                    statusText.text = "✅ AI VERIFICATION COMPLETE - Location Authenticated!"
+                    statusText.text = "✅ LOCATION VERIFIED!"
+                    proceedButton.visibility = android.view.View.VISIBLE
                     
-                    // Add a success animation effect
-                    animateVerificationSuccess()
+                    // Update location display to show verified status
+                    lastKnownLocation?.let { location ->
+                        updateLocationDisplay(location, true)
+                    }
                 }
                 
-                Log.d(TAG, "✅ AI verification completed successfully")
+                Log.d(TAG, "✅ Verification completed successfully")
                 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ AI verification failed", e)
-                isVerificationInProgress = false
-                isVerifying = false
-                statusText.text = "❌ AI verification failed - Please try again"
+                Log.e(TAG, "❌ Verification timer failed", e)
+                statusText.text = "❌ Verification failed - Please try again"
             }
         }
     }
-    
-    private fun animateVerificationSuccess() {
-        lifecycleScope.launch {
-            // Flash effect for success
-            val originalText = statusText.text
-            repeat(3) {
-                statusText.text = "🎉 SUCCESS! Location Verified! 🎉"
-                delay(500L)
-                statusText.text = originalText
-                delay(300L)
-            }
-            
-            // Show final success message
-            statusText.text = "✅ VERIFICATION COMPLETE - Redirecting..."
-            delay(2000L) // Wait 2 seconds before redirecting
-            
-            // Redirect to Game Selection Activity
-            Log.d(TAG, "🎮 Redirecting to Game Selection Activity")
-            val intent = Intent(this@VerifyArActivity, GameSelectionActivity::class.java)
-            startActivity(intent)
-            
-            // Optionally finish this activity so user can't go back
-            finish()
-        }
-    }
+
 }
